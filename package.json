@@ -1,0 +1,41 @@
+{
+  "name": "fabric-react-editor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monorepo for fabric-react-editor managed by pnpm workspaces and Turborepo.",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "lint:root": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@commitlint/config-conventional": "^19.5.0",
+    "@eslint/js": "^9.10.0",
+    "@types/node": "^20.12.7",
+    "eslint": "^9.10.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.36.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.9.0",
+    "husky": "^9.1.6",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.5",
+    "typescript-eslint": "^8.8.0"
+  }
+}

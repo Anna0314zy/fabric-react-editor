@@ -1,0 +1,28 @@
+{
+  "name": "@fabric-react-editor/editor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist node_modules .turbo"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.2.3",
+    "antd": "^6.4.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "vite": "^6.3.5"
+  }
+}
