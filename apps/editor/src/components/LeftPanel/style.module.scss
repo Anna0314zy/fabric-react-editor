@@ -1,0 +1,41 @@
+@use '@/styles/variables' as *;
+
+.panel {
+  width: $left-panel-width;
+  border-right: 1px solid $color-border;
+  background: $color-bg-panel;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.title {
+  padding: $spacing-md $spacing-lg;
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  border-bottom: 1px solid $color-border;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $spacing-sm;
+  padding: $spacing-xs;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  border: 1px dashed $color-border-dashed;
+  border-radius: $radius-sm;
+  font-size: $font-size-sm;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: $color-primary;
+    color: $color-primary;
+    background: $color-primary-bg;
+  }
+}

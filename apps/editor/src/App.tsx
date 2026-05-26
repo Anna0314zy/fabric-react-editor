@@ -1,24 +1,30 @@
-import { Button, Space, Typography } from 'antd';
-import { useCounterStore } from '@/store';
-
-const { Title, Text } = Typography;
+import Header from '@/components/Header';
+import LeftPanel from '@/components/LeftPanel';
+import Canvas from '@/components/Canvas';
+import RightPanel from '@/components/RightPanel';
+import PageManager from '@/components/PageManager';
+import styles from './App.module.scss';
 
 function App() {
-  const { count, increment, decrement, reset } = useCounterStore();
-
   return (
-    <div style={{ padding: '2rem' }}>
-      <Title>Fabric React Editor</Title>
-      <Text>Zustand Counter: {count}</Text>
-      <Space style={{ marginTop: '1rem' }}>
-        <Button type="primary" onClick={increment}>
-          +1
-        </Button>
-        <Button onClick={decrement}>-1</Button>
-        <Button danger onClick={reset}>
-          Reset
-        </Button>
-      </Space>
+    <div className={styles.editorLayout}>
+      {/* 顶部工具栏 */}
+      <Header />
+
+      {/* 主体区域 */}
+      <div className={styles.editorBody}>
+        {/* 左侧组件面板 */}
+        <LeftPanel />
+
+        {/* 中间画布 + 底部页面管理 */}
+        <div className={styles.editorCenter}>
+          <Canvas />
+          <PageManager />
+        </div>
+
+        {/* 右侧属性配置面板 */}
+        <RightPanel />
+      </div>
     </div>
   );
 }

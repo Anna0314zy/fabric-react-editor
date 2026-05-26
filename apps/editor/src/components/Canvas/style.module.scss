@@ -1,0 +1,10 @@
+@use '@/styles/variables' as *;
+
+.container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: $color-bg-canvas;
+  overflow: hidden;
+}

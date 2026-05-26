@@ -1,0 +1,38 @@
+// ========== 颜色 ==========
+$color-primary: #1677ff;
+$color-primary-bg: #e6f4ff;
+$color-border: #e8e8e8;
+$color-border-dashed: #d9d9d9;
+$color-bg-base: #fff;
+$color-bg-panel: #fafafa;
+$color-bg-canvas: #f0f0f0;
+$color-text: rgba(0, 0, 0, 0.88);
+
+// ========== 间距 ==========
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 12px;
+$spacing-lg: 16px;
+$spacing-xl: 24px;
+
+// ========== 尺寸 ==========
+$header-height: 48px;
+$footer-height: 40px;
+$left-panel-width: 260px;
+$right-panel-width: 280px;
+
+// ========== 字体 ==========
+$font-size-sm: 12px;
+$font-size-base: 14px;
+$font-size-lg: 16px;
+$font-weight-medium: 500;
+$font-weight-bold: 600;
+
+// ========== 圆角 ==========
+$radius-sm: 4px;
+$radius-md: 6px;
+
+// ========== z-index ==========
+$z-header: 100;
+$z-modal: 1000;
+$z-popover: 1100;

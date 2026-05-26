@@ -1,0 +1,18 @@
+@use './variables' as *;
+
+// 仅作用于根容器，避免使用 *、html、body 等全局选择器
+:global(#root) {
+  position: fixed;
+  inset: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: $font-size-base;
+  color: $color-text;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}

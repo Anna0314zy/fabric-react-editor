@@ -1,0 +1,24 @@
+@use '@/styles/variables' as *;
+
+.panel {
+  width: $right-panel-width;
+  border-left: 1px solid $color-border;
+  background: $color-bg-panel;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.title {
+  padding: $spacing-md $spacing-lg;
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  border-bottom: 1px solid $color-border;
+}
+
+.group {
+  padding: $spacing-sm 0;
+}
+
+.empty {
+  margin-top: 80px;
+}

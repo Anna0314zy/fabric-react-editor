@@ -1,0 +1,15 @@
+@use '@/styles/variables' as *;
+
+.wrapper {
+  height: $footer-height;
+  border-top: 1px solid $color-border;
+  background: $color-bg-base;
+  padding: 0 $spacing-sm;
+  display: flex;
+  align-items: center;
+
+  // 覆盖 AntD Tabs 内部样式必须使用 :global
+  :global(.ant-tabs) {
+    width: 100%;
+  }
+}
