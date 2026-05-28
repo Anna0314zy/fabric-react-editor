@@ -10,6 +10,13 @@ out/
 .turbo/
 *.tsbuildinfo
 
+# TS emit (should never appear under apps/*/src)
+apps/*/src/**/*.js
+apps/*/src/**/*.js.map
+apps/*/src/**/*.d.ts
+apps/*/src/**/*.d.ts.map
+!apps/*/src/vite-env.d.ts
+
 # Test & coverage
 coverage/
 

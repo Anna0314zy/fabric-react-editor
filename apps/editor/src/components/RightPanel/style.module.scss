@@ -15,8 +15,45 @@
   border-bottom: 1px solid $color-border;
 }
 
+.subTitle {
+  padding: $spacing-sm $spacing-lg;
+  font-size: $font-size-sm;
+  color: rgba(0, 0, 0, 0.55);
+  border-bottom: 1px dashed $color-border;
+}
+
 .group {
   padding: $spacing-sm 0;
+  display: flex;
+  flex-direction: column;
+  gap: $spacing-sm;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  padding: 0 $spacing-sm;
+}
+
+.label {
+  flex: 0 0 64px;
+  font-size: $font-size-sm;
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.control {
+  flex: 1;
+  min-width: 0;
+
+  // 让内部 antd 控件撑满
+  :global(.ant-input-number),
+  :global(.ant-select),
+  :global(.ant-input),
+  :global(.ant-input-affix-wrapper),
+  :global(.ant-color-picker-trigger) {
+    width: 100%;
+  }
 }
 
 .empty {

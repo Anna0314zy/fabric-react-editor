@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -16,6 +16,7 @@
     "@ant-design/icons": "^6.2.3",
     "antd": "^6.4.3",
     "fabric": "^7.4.0",
+    "hotkeys-js": "^4.0.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zustand": "^5.0.5"
