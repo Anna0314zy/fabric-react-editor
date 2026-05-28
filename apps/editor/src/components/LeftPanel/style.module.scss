@@ -66,8 +66,20 @@
   margin-top: $spacing-xl;
 }
 
-.layerList {
-  padding: $spacing-sm;
+.layerViewport {
+  height: min(520px, calc(100vh - #{$header-height} - 96px));
+  overflow-y: auto;
+}
+
+.layerVirtualInner {
+  position: relative;
+}
+
+.layerVirtualRow {
+  position: absolute;
+  right: $spacing-sm;
+  left: $spacing-sm;
+  height: 48px;
 }
 
 .layerItem {
@@ -112,6 +124,16 @@
   color: rgba(0, 0, 0, 0.45);
   font-size: 12px;
   line-height: 1;
+}
+
+.layerState {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+  min-width: 28px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
 }
 
 .layerActions {

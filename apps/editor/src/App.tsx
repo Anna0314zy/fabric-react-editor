@@ -25,7 +25,7 @@ function App() {
         </div>
 
         {/* 右侧属性配置面板 */}
-        <RightPanel />
+        {/* <RightPanel /> */}
       </div>
     </div>
   );

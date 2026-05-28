@@ -1,23 +1,17 @@
-import { Button, Collapse, Empty, Tabs, Tooltip } from 'antd';
+import { Collapse, Tabs } from 'antd';
 import {
   AppstoreOutlined,
-  ArrowDownOutlined,
-  ArrowUpOutlined,
-  DeleteOutlined,
-  EyeInvisibleOutlined,
-  EyeOutlined,
   FontSizeOutlined,
   BorderOutlined,
-  LockOutlined,
   OrderedListOutlined,
   PictureOutlined,
   StarOutlined,
   LineOutlined,
-  UnlockOutlined,
 } from '@ant-design/icons';
 import { useEditorStore } from '@/store';
 import { createWidgetByType } from '@/core/canvas/createWidget';
-import type { Widget, WidgetType } from '@/types/widget';
+import type { WidgetType } from '@/types/widget';
+import LayerPanel from './LayerPanel';
 import styles from './style.module.scss';
 
 interface ComponentItem {
@@ -73,15 +67,6 @@ const componentCategories: ComponentCategory[] = [
 ];
 
 const LeftPanel = () => {
-  const activePageId = useEditorStore((s) => s.activePageId);
-  const widgets = useEditorStore((s) => s.widgets);
-  const rootIds = useEditorStore((s) => s.rootIds[activePageId] ?? []);
-  const selectedIds = useEditorStore((s) => s.selectedIds);
-  const setSelectedIds = useEditorStore((s) => s.setSelectedIds);
-  const updateWidget = useEditorStore((s) => s.updateWidget);
-  const removeWidget = useEditorStore((s) => s.removeWidget);
-  const reorderWidget = useEditorStore((s) => s.reorderWidget);
-
   /** 点击 -> 在画布中心生成默认 widget 并 dispatch */
   const handleAdd = (type?: WidgetType) => {
     if (!type) return;
@@ -91,25 +76,6 @@ const LeftPanel = () => {
     const widget = createWidgetByType(type, page);
     if (!widget) return;
     state.addWidget(widget);
-  };
-
-  const handleSelectLayer = (id: string) => {
-    setSelectedIds([id]);
-  };
-
-  const handleMoveLayer = (id: string, direction: 'up' | 'down') => {
-    const from = rootIds.indexOf(id);
-    if (from === -1) return;
-    const to = direction === 'up' ? from + 1 : from - 1;
-    reorderWidget(activePageId, from, to);
-  };
-
-  const handleToggleVisible = (widget: Widget) => {
-    updateWidget(widget.id, { visible: widget.visible === false });
-  };
-
-  const handleToggleLocked = (widget: Widget) => {
-    updateWidget(widget.id, { locked: !widget.locked });
   };
 
   const collapseItems = componentCategories.map((category) => ({
@@ -134,118 +100,10 @@ const LeftPanel = () => {
     ),
   }));
 
-  const layerItems = rootIds
-    .map((id) => widgets[id])
-    .filter((widget): widget is Widget => !!widget)
-    .reverse();
-
-  const renderLayerName = (widget: Widget) => {
-    const name = widget.name.trim() || '未命名图层';
-    return (
-      <div className={styles.layerMeta}>
-        <span className={styles.layerName}>{name}</span>
-        <span className={styles.layerType}>{widget.type}</span>
-      </div>
-    );
-  };
-
   const componentPanel = (
     <>
       <div className={styles.title}>组件库</div>
       <Collapse items={collapseItems} defaultActiveKey={['basic']} bordered={false} size="small" />
-    </>
-  );
-
-  const layerPanel = (
-    <>
-      <div className={styles.title}>图层</div>
-      {layerItems.length > 0 ? (
-        <div className={styles.layerList}>
-          {layerItems.map((widget) => {
-            const sourceIndex = rootIds.indexOf(widget.id);
-            const isSelected = selectedIds.includes(widget.id);
-            const isHidden = widget.visible === false;
-            const isLocked = !!widget.locked;
-
-            return (
-              <div
-                className={`${styles.layerItem} ${isSelected ? styles.selectedLayer : ''}`}
-                key={widget.id}
-                onClick={() => handleSelectLayer(widget.id)}
-              >
-                {renderLayerName(widget)}
-                <div className={styles.layerActions}>
-                  <Tooltip title={isHidden ? '显示' : '隐藏'}>
-                    <Button
-                      aria-label={isHidden ? '显示图层' : '隐藏图层'}
-                      icon={isHidden ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                      size="small"
-                      type="text"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleToggleVisible(widget);
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title={isLocked ? '解锁' : '锁定'}>
-                    <Button
-                      aria-label={isLocked ? '解锁图层' : '锁定图层'}
-                      icon={isLocked ? <LockOutlined /> : <UnlockOutlined />}
-                      size="small"
-                      type="text"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleToggleLocked(widget);
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="上移">
-                    <Button
-                      aria-label="上移图层"
-                      disabled={sourceIndex >= rootIds.length - 1}
-                      icon={<ArrowUpOutlined />}
-                      size="small"
-                      type="text"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleMoveLayer(widget.id, 'up');
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="下移">
-                    <Button
-                      aria-label="下移图层"
-                      disabled={sourceIndex <= 0}
-                      icon={<ArrowDownOutlined />}
-                      size="small"
-                      type="text"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleMoveLayer(widget.id, 'down');
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="删除">
-                    <Button
-                      aria-label="删除图层"
-                      danger
-                      icon={<DeleteOutlined />}
-                      size="small"
-                      type="text"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        removeWidget(widget.id);
-                      }}
-                    />
-                  </Tooltip>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <Empty description="当前页面暂无图层" className={styles.empty} />
-      )}
     </>
   );
 
@@ -271,7 +129,7 @@ const LeftPanel = () => {
                 <OrderedListOutlined /> 图层
               </span>
             ),
-            children: layerPanel,
+            children: <LayerPanel />,
           },
         ]}
       />

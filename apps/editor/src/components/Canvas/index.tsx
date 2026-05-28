@@ -5,6 +5,23 @@ import { applyWidgetPatch, widgetToFabric } from '@/core/canvas/widgetToFabric';
 import { canvasEngine } from '@/core/engine';
 import type { Widget } from '@/types/widget';
 import styles from './style.module.scss';
+
+/**
+ * 批量修改 Fabric 对象时临时关闭自动渲染，避免 add/remove/reorder 连续触发重绘。
+ *
+ * @param canvas 当前 Fabric canvas 实例。
+ * @param task 需要批量执行的画布结构操作。
+ */
+function batchCanvasMutation(canvas: fabric.Canvas, task: () => void): void {
+  const prevRenderOnAddRemove = canvas.renderOnAddRemove;
+  canvas.renderOnAddRemove = false;
+  try {
+    task();
+  } finally {
+    canvas.renderOnAddRemove = prevRenderOnAddRemove;
+  }
+}
+
 const Canvas = () => {
   const canvasElRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -12,14 +29,16 @@ const Canvas = () => {
   const fabricRef = useRef<fabric.Canvas | null>(null);
   /** 上一次渲染的 widget 快照，用于 diff */
   const lastWidgetsRef = useRef<Record<string, Widget>>({});
+  /** 当前页面根节点 id 快照，用于把结构同步和属性同步拆开 */
+  const rootIdsRef = useRef<string[]>([]);
 
   const activePageId = useEditorStore((s) => s.activePageId);
   const page = useEditorStore((s) => s.pages[activePageId]);
   const pageWidth = page?.width;
   const pageHeight = page?.height;
   const pageBackground = page?.background;
-  const widgets = useEditorStore((s) => s.widgets);
   const rootIds = useEditorStore((s) => s.rootIds[activePageId]);
+  const widgetPatchVersion = useEditorStore((s) => s.widgetPatchVersion);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   /**
    * 1. 删除不存在对象
@@ -93,6 +112,7 @@ const Canvas = () => {
       fabricRef.current = null;
       canvasEngine.detach();
       lastWidgetsRef.current = {};
+      rootIdsRef.current = [];
     };
     // 仅在切换页面（id 变化）时重建
   }, [activePageId]);
@@ -112,71 +132,89 @@ const Canvas = () => {
     canvas.backgroundColor = pageBackground;
     canvas.requestRenderAll();
   }, [pageBackground]);
-  // TODO 全量操作
-  // diff 渲染：widgets / rootIds 变化时同步到 fabric
+  // 结构同步：只在根层级变化时处理新增、删除和 z-index。
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    console.log('Canvas useEffect', 'color:red;font-size:16px');
 
     const ids = rootIds ?? [];
     const idSet = new Set(ids);
-    const lastWidgets = lastWidgetsRef.current;
+    const currentWidgets = useEditorStore.getState().widgets;
+    const prevRootIds = rootIdsRef.current;
+    const orderChanged =
+      prevRootIds.length !== ids.length || prevRootIds.some((id, index) => id !== ids[index]);
+    let structuralChanged = false;
 
-    // 1. 删除已不存在的对象
-    canvas.getObjects().forEach((obj) => {
-      const oid = (obj as fabric.Object & { data?: { id?: string } }).data?.id;
-      if (!oid) return;
-      if (!idSet.has(oid) || !widgets[oid]) {
-        canvas.remove(obj);
-        canvasEngine.unregisterObject(oid);
-      }
-    });
-
-    // 2. 新增 / 更新
-    ids.forEach((id, index) => {
-      const w = widgets[id];
-      if (!w) return;
-
-      const existing = canvasEngine.getObject(id);
-      if (!existing) {
-        // 新增
-        const obj = widgetToFabric(w);
-        if (!obj) return;
-        canvas.add(obj);
-        console.log('Canvas add object', 'color:green;font-size:16px', obj, id);
-        canvasEngine.registerObject(id, obj);
-      } else {
-        // 更新：与上一次快照 diff，构造 patch
-        const prev = lastWidgets[id];
-        if (prev && prev !== w) {
-          const patch: Record<string, unknown> = {};
-          const prevRec = prev as unknown as Record<string, unknown>;
-          const currRec = w as unknown as Record<string, unknown>;
-          Object.keys(currRec).forEach((k) => {
-            if (prevRec[k] !== currRec[k]) {
-              patch[k] = currRec[k];
-            }
-          });
-          if (Object.keys(patch).length > 0) {
-            applyWidgetPatch(existing, w, patch as Partial<Widget>);
-          }
+    batchCanvasMutation(canvas, () => {
+      canvas.getObjects().forEach((obj) => {
+        const oid = (obj as fabric.Object & { data?: { id?: string } }).data?.id;
+        if (!oid) return;
+        if (!idSet.has(oid) || !currentWidgets[oid]) {
+          canvas.remove(obj);
+          canvasEngine.unregisterObject(oid);
+          delete lastWidgetsRef.current[oid];
+          structuralChanged = true;
         }
-      }
+      });
 
-      // 3. 调整层级（按 rootIds 顺序）
-      const obj = canvasEngine.getObject(id);
-      if (obj) {
-        const currentIndex = canvas.getObjects().indexOf(obj);
-        if (currentIndex !== index && currentIndex !== -1) {
+      const orderedObjects: fabric.Object[] = [];
+      ids.forEach((id) => {
+        const w = currentWidgets[id];
+        if (!w) return;
+
+        let obj = canvasEngine.getObject(id);
+        if (!obj) {
+          obj = widgetToFabric(w) ?? undefined;
+          if (!obj) return;
+          canvas.add(obj);
+          canvasEngine.registerObject(id, obj);
+          lastWidgetsRef.current[id] = w;
+          structuralChanged = true;
+        }
+
+        orderedObjects.push(obj);
+      });
+
+      if (orderChanged) {
+        orderedObjects.forEach((obj, index) => {
           canvas.moveObjectTo(obj, index);
-        }
+        });
+        structuralChanged = true;
       }
     });
-    // 请求一次异步渲染
-    canvas.requestRenderAll();
-    lastWidgetsRef.current = widgets;
-  }, [widgets, rootIds]);
+
+    if (structuralChanged) {
+      canvas.requestRenderAll();
+    }
+    rootIdsRef.current = ids;
+  }, [rootIds]);
+
+  // 属性同步：只消费 store 记录的 patch，避免每次属性变化都扫描当前页所有对象。
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+
+    let changed = false;
+    const state = useEditorStore.getState();
+    const { widgetPatches, widgets } = state;
+
+    Object.entries(widgetPatches).forEach(([id, patch]) => {
+      const w = widgets[id];
+      const obj = canvasEngine.getObject(id);
+      if (!w || !obj) return;
+
+      if (Object.keys(patch).length > 0) {
+        applyWidgetPatch(obj, w, patch);
+        changed = true;
+      }
+      lastWidgetsRef.current[id] = w;
+    });
+
+    if (changed) {
+      canvas.requestRenderAll();
+    }
+    state._clearWidgetPatches(widgetPatchVersion);
+  }, [widgetPatchVersion]);
 
   useEffect(() => {
     const canvas = fabricRef.current;

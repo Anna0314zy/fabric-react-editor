@@ -44,3 +44,23 @@ Fabric 对象上会挂一个 data.id，用来和 store 里的 widgetId 对应。
 
 所以我会把 Fabric 的变化回写到 store，再由 store 驱动画布同步，保证数据流可控。
 ```
+
+你截图里关键指标：
+
+Frame Rate: 34.8 fps：低于理想 60fps，交互已经有明显卡顿风险
+INP: 632 ms：这个很差，说明点击/拖拽/选中后的响应延迟偏高
+LCP: 41.02 s：这个对编辑器场景参考价值没 INP 大，但也说明首屏渲染压力很重
+GPU memory: 536.9 MB max：也偏高，说明 500 个 Fabric 对象加上页面 UI 已经比较吃资源
+从截图看，瓶颈不只在 Fabric 画布，还包括：
+
+左侧图层/组件区域渲染
+500 个图层如果都进左侧图层列表，DOM 压力会明显上来。后面要做虚拟列表。
+
+Canvas 首次创建 500 个 Fabric 对象
+首次 widgetToFabric + canvas.add + moveObjectTo + render 会比较重。
+
+选中/拖动时 Fabric 重绘
+500 个对象都在一个 canvas 上，Fabric 的命中检测、控制点、重绘会影响帧率。
+
+右侧属性面板联动
+选中对象后 store 更新、Canvas selection 同步、右侧面板刷新都会参与 INP。

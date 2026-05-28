@@ -61,6 +61,80 @@ const page1Widgets: Widget[] = [
   },
 ];
 
+const STRESS_WIDGET_COUNT = 500;
+const STRESS_COLS = 25;
+const STRESS_CELL_WIDTH = 46;
+const STRESS_CELL_HEIGHT = 30;
+const STRESS_START_LEFT = 48;
+const STRESS_START_TOP = 420;
+const STRESS_COLORS = ['#1677ff', '#52c41a', '#faad14', '#eb2f96', '#722ed1', '#13c2c2'];
+
+/** 页面 1：性能测试对象，用于观察 500+ 元素时的同步与渲染瓶颈 */
+const stressWidgets: Widget[] = Array.from({ length: STRESS_WIDGET_COUNT }, (_, index) => {
+  const col = index % STRESS_COLS;
+  const row = Math.floor(index / STRESS_COLS);
+  const left = STRESS_START_LEFT + col * STRESS_CELL_WIDTH;
+  const top = STRESS_START_TOP + row * STRESS_CELL_HEIGHT;
+  const color = STRESS_COLORS[index % STRESS_COLORS.length]!;
+
+  if (index % 20 === 0) {
+    return {
+      id: `w-stress-text-${index}`,
+      type: 'text',
+      name: `性能文本 ${index + 1}`,
+      pageId: 'p-1',
+      parentId: null,
+      left,
+      top,
+      width: 72,
+      height: 22,
+      angle: 0,
+      scaleX: 1,
+      scaleY: 1,
+      fill: '#222',
+      text: `${index + 1}`,
+      fontSize: 14,
+      fontWeight: 'normal',
+    };
+  }
+
+  if (index % 3 === 0) {
+    return {
+      id: `w-stress-circle-${index}`,
+      type: 'circle',
+      name: `性能圆形 ${index + 1}`,
+      pageId: 'p-1',
+      parentId: null,
+      left,
+      top,
+      width: 18,
+      height: 18,
+      angle: 0,
+      scaleX: 1,
+      scaleY: 1,
+      fill: color,
+      opacity: 0.9,
+    };
+  }
+
+  return {
+    id: `w-stress-rect-${index}`,
+    type: 'rect',
+    name: `性能矩形 ${index + 1}`,
+    pageId: 'p-1',
+    parentId: null,
+    left,
+    top,
+    width: 28,
+    height: 18,
+    angle: 0,
+    scaleX: 1,
+    scaleY: 1,
+    fill: color,
+    opacity: 0.9,
+  };
+});
+
 /** 页面 2：编组演示（group 虚拟节点 + 2 个子节点） */
 const page2Widgets: Widget[] = [
   {
@@ -126,11 +200,15 @@ export const PRESET_PAGES: Record<string, PageData> = {
 };
 
 /** 预设所有 widget 的扁平池 */
-export const PRESET_WIDGETS: Record<string, Widget> = toRecord([...page1Widgets, ...page2Widgets]);
+export const PRESET_WIDGETS: Record<string, Widget> = toRecord([
+  ...page1Widgets,
+  ...stressWidgets,
+  ...page2Widgets,
+]);
 
 /** 预设 pageId -> 根层级 widget id 列表 */
 export const PRESET_ROOT_IDS: Record<string, string[]> = {
-  'p-1': ['w-rect-1', 'w-circle-1', 'w-text-1'],
+  'p-1': [...page1Widgets.map((w) => w.id), ...stressWidgets.map((w) => w.id)],
   'p-2': ['g-1'],
 };
 

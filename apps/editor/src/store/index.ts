@@ -30,6 +30,11 @@ interface EditorState {
   rootIds: Record<string, string[]>;
   /** 每个 group 的子 widget id 列表：groupId -> widgetId[] */
   childIds: Record<string, string[]>;
+  /** 最近一批 widget 属性变更：widgetId -> patch，用于 Canvas 增量同步 */
+  widgetPatches: Record<string, Partial<Widget>>;
+  /** widgetPatches 版本号；每次属性变更递增，供 Canvas 低成本订阅 */
+  // widgetPatchVersion 是一个轻量变更信号，widgetPatches 是真实增量数据。Canvas 订阅 version，读取 patches，从而避免订阅大对象 widgets 造成全量扫描。
+  widgetPatchVersion: number;
 
   // ========================
   // ui
@@ -56,6 +61,8 @@ interface EditorState {
   _reorderWidget: (pageId: string, from: number, to: number) => void;
   /** 还原被删除子树（供 RemoveWidgetCommand.undo 使用） */
   _restoreWidgets: (snapshot: RemoveSnapshot) => void;
+  /** 清理已被 Canvas 消费的属性 patch */
+  _clearWidgetPatches: (version: number) => void;
 
   // ========================
   // actions（对外，走 history）
@@ -76,6 +83,8 @@ export const useEditorStore = create<EditorState>((set) => ({
   widgets: PRESET_WIDGETS,
   rootIds: PRESET_ROOT_IDS,
   childIds: PRESET_CHILD_IDS,
+  widgetPatches: {},
+  widgetPatchVersion: 0,
 
   // ui
   activePageId: PRESET_ACTIVE_PAGE_ID,
@@ -114,6 +123,14 @@ export const useEditorStore = create<EditorState>((set) => ({
           ...state.widgets,
           [id]: { ...target, ...patch } as Widget,
         },
+        widgetPatches: {
+          ...state.widgetPatches,
+          [id]: {
+            ...(state.widgetPatches[id] ?? {}),
+            ...patch,
+          },
+        },
+        widgetPatchVersion: state.widgetPatchVersion + 1,
       };
     }),
 
@@ -174,6 +191,9 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedIds,
         hoveredId,
         editingTextId,
+        widgetPatches: Object.fromEntries(
+          Object.entries(state.widgetPatches).filter(([wid]) => !toRemove.has(wid)),
+        ),
       };
     }),
 
@@ -222,6 +242,13 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       return { widgets, rootIds, childIds };
+    }),
+
+  _clearWidgetPatches: (version) =>
+    set((state) => {
+      if (state.widgetPatchVersion !== version) return state;
+      if (Object.keys(state.widgetPatches).length === 0) return state;
+      return { widgetPatches: {} };
     }),
 
   // ========================
