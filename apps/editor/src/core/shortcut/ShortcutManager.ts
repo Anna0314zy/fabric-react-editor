@@ -1,5 +1,6 @@
 import hotkeys, { type KeyHandler } from 'hotkeys-js';
 import { commandManager } from '@/core/command';
+import { logger } from '@/core/logger';
 
 const DEFAULT_SCOPE = 'global';
 const MODIFIER_ORDER = ['ctrl', 'command', 'alt', 'shift'];
@@ -251,7 +252,7 @@ list() 方法就是返回它
     }
 
     if (policy === 'warn') {
-      console.warn(`[ShortcutManager] shortcut conflict in scope "${scope}", skipped: ${detail}`);
+      logger.warn('ShortcutManager', `shortcut conflict in scope "${scope}", skipped: ${detail}`);
     }
 
     return normalizedKeys.filter((key) => !this.bindingIndex.has(this.getBindingKey(scope, key)));

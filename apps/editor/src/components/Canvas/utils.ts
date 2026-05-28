@@ -1,4 +1,5 @@
 import type * as fabric from 'fabric';
+import { logger } from '@/core/logger';
 
 export function monitorFabricPerformance(canvas: fabric.Canvas): () => void {
   let count = 0;
@@ -15,7 +16,7 @@ export function monitorFabricPerformance(canvas: fabric.Canvas): () => void {
     const fps = count;
     const msPerRender = (now - last) / (count || 1);
 
-    console.log({
+    logger.debug('CanvasPerformance', {
       fps,
       msPerRender,
     });

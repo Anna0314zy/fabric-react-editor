@@ -135,8 +135,6 @@ export const applyWidgetPatch = (
     if ('lineHeight' in tp) generic.lineHeight = tp.lineHeight;
     if ('underline' in tp) generic.underline = tp.underline;
   }
-  console.log('Canvas update object', 'color:blue;font-size:16px', `${generic}`);
-
   obj.set(generic);
   // 重新计算对象控制点 / 边界盒 / 命中区域
   obj.setCoords();

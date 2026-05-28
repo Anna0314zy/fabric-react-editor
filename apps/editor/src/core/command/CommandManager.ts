@@ -1,4 +1,5 @@
 import type { Command, CommandContext } from './types';
+import { logger } from '@/core/logger';
 
 /**
  * CommandManager —— 命令注册中心
@@ -18,7 +19,7 @@ class CommandManagerImpl {
   /** 注册命令；同 id 重复注册会覆盖并打 warn */
   register(cmd: Command): void {
     if (this.commands.has(cmd.id)) {
-      console.warn(`[CommandManager] duplicate command id: ${cmd.id}, will be overridden.`);
+      logger.warn('CommandManager', `duplicate command id: ${cmd.id}, will be overridden.`);
     }
     this.commands.set(cmd.id, cmd);
   }
@@ -56,7 +57,7 @@ class CommandManagerImpl {
   execute(id: string): boolean {
     const cmd = this.commands.get(id);
     if (!cmd) {
-      console.warn(`[CommandManager] command not found: ${id}`);
+      logger.warn('CommandManager', `command not found: ${id}`);
       return false;
     }
     if (cmd.canExecute && !cmd.canExecute(this.ctx)) return false;
