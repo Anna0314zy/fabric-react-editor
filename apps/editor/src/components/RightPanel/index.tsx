@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Collapse,
   Empty,
@@ -32,6 +32,104 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 const isTextWidget = (w: Widget): w is Extract<Widget, { type: 'text' | 'i-text' }> =>
   w.type === 'text' || w.type === 'i-text';
 
+interface BufferedNumberProps {
+  min?: number;
+  value: number;
+  onCommit: (value: number) => void;
+}
+
+const BufferedNumber = ({ min, value, onCommit }: BufferedNumberProps) => {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = useCallback(() => {
+    onCommit(Number(draft ?? min ?? 0));
+  }, [draft, min, onCommit]);
+
+  return (
+    <InputNumber
+      size="small"
+      min={min}
+      value={draft}
+      onBlur={commit}
+      onChange={(v) => setDraft(Number(v ?? min ?? 0))}
+      onPressEnter={commit}
+    />
+  );
+};
+
+interface BufferedTextProps {
+  value: string;
+  onCommit: (value: string) => void;
+}
+
+const BufferedInput = ({ value, onCommit }: BufferedTextProps) => {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = useCallback(() => {
+    onCommit(draft);
+  }, [draft, onCommit]);
+
+  return (
+    <Input
+      size="small"
+      value={draft}
+      onBlur={commit}
+      onChange={(event) => setDraft(event.target.value)}
+      onPressEnter={commit}
+    />
+  );
+};
+
+const BufferedTextArea = ({ value, onCommit }: BufferedTextProps) => {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  return (
+    <Input.TextArea
+      size="small"
+      autoSize={{ minRows: 1, maxRows: 4 }}
+      value={draft}
+      onBlur={() => onCommit(draft)}
+      onChange={(event) => setDraft(event.target.value)}
+    />
+  );
+};
+
+interface BufferedSliderProps {
+  value: number;
+  onCommit: (value: number) => void;
+}
+
+const BufferedSlider = ({ value, onCommit }: BufferedSliderProps) => {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  return (
+    <Slider
+      min={0}
+      max={1}
+      step={0.01}
+      value={draft}
+      onChange={(v) => setDraft(Number(v))}
+      onChangeComplete={(v) => onCommit(Number(v))}
+    />
+  );
+};
+
 const RightPanel = () => {
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const widget = useEditorStore((s) =>
@@ -41,10 +139,13 @@ const RightPanel = () => {
   const removeWidget = useEditorStore((s) => s.removeWidget);
 
   /** 统一的属性写入 */
-  const patch = (p: Partial<Widget>) => {
-    if (!widget) return;
-    updateWidget(widget.id, p);
-  };
+  const patch = useCallback(
+    (p: Partial<Widget>) => {
+      if (!widget) return;
+      updateWidget(widget.id, p);
+    },
+    [updateWidget, widget],
+  );
 
   const items = useMemo(() => {
     if (!widget) return [];
@@ -53,40 +154,30 @@ const RightPanel = () => {
     const position = (
       <div className={styles.group}>
         <Row label="X">
-          <InputNumber
-            size="small"
-            value={Math.round(widget.left)}
-            onChange={(v) => patch({ left: Number(v ?? 0) })}
-          />
+          <BufferedNumber value={Math.round(widget.left)} onCommit={(v) => patch({ left: v })} />
         </Row>
         <Row label="Y">
-          <InputNumber
-            size="small"
-            value={Math.round(widget.top)}
-            onChange={(v) => patch({ top: Number(v ?? 0) })}
-          />
+          <BufferedNumber value={Math.round(widget.top)} onCommit={(v) => patch({ top: v })} />
         </Row>
         <Row label="宽">
-          <InputNumber
-            size="small"
+          <BufferedNumber
             min={1}
             value={Math.round(widget.width)}
-            onChange={(v) => patch({ width: Number(v ?? 1) })}
+            onCommit={(v) => patch({ width: v })}
           />
         </Row>
         <Row label="高">
-          <InputNumber
-            size="small"
+          <BufferedNumber
             min={1}
             value={Math.round(widget.height)}
-            onChange={(v) => patch({ height: Number(v ?? 1) })}
+            onCommit={(v) => patch({ height: v })}
           />
         </Row>
         <Row label="旋转">
           <Space.Compact size="small">
-            <InputNumber
+            <BufferedNumber
               value={Math.round(widget.angle)}
-              onChange={(v) => patch({ angle: Number(v ?? 0) })}
+              onCommit={(v) => patch({ angle: v })}
             />
             <Typography.Text
               style={{
@@ -111,7 +202,7 @@ const RightPanel = () => {
           <ColorPicker
             size="small"
             value={widget.fill ?? '#000000'}
-            onChange={(c) => patch({ fill: toHex(c) })}
+            onChangeComplete={(c) => patch({ fill: toHex(c) })}
             showText
           />
         </Row>
@@ -119,26 +210,19 @@ const RightPanel = () => {
           <ColorPicker
             size="small"
             value={widget.stroke ?? '#000000'}
-            onChange={(c) => patch({ stroke: toHex(c) })}
+            onChangeComplete={(c) => patch({ stroke: toHex(c) })}
             showText
           />
         </Row>
         <Row label="描边粗细">
-          <InputNumber
-            size="small"
+          <BufferedNumber
             min={0}
             value={widget.strokeWidth ?? 0}
-            onChange={(v) => patch({ strokeWidth: Number(v ?? 0) })}
+            onCommit={(v) => patch({ strokeWidth: v })}
           />
         </Row>
         <Row label="不透明度">
-          <Slider
-            min={0}
-            max={1}
-            step={0.01}
-            value={widget.opacity ?? 1}
-            onChange={(v) => patch({ opacity: Number(v) })}
-          />
+          <BufferedSlider value={widget.opacity ?? 1} onCommit={(v) => patch({ opacity: v })} />
         </Row>
       </div>
     );
@@ -147,19 +231,13 @@ const RightPanel = () => {
     const text = isTextWidget(widget) ? (
       <div className={styles.group}>
         <Row label="内容">
-          <Input.TextArea
-            size="small"
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            value={widget.text}
-            onChange={(e) => patch({ text: e.target.value })}
-          />
+          <BufferedTextArea value={widget.text} onCommit={(v) => patch({ text: v })} />
         </Row>
         <Row label="字号">
-          <InputNumber
-            size="small"
+          <BufferedNumber
             min={1}
             value={widget.fontSize ?? 16}
-            onChange={(v) => patch({ fontSize: Number(v ?? 16) })}
+            onCommit={(v) => patch({ fontSize: v })}
           />
         </Row>
         <Row label="字重">
@@ -224,11 +302,7 @@ const RightPanel = () => {
     const advanced = (
       <div className={styles.group}>
         <Row label="名称">
-          <Input
-            size="small"
-            value={widget.name}
-            onChange={(e) => patch({ name: e.target.value })}
-          />
+          <BufferedInput value={widget.name} onCommit={(v) => patch({ name: v })} />
         </Row>
         <Row label="锁定">
           <Switch size="small" checked={!!widget.locked} onChange={(b) => patch({ locked: b })} />
@@ -255,9 +329,7 @@ const RightPanel = () => {
     if (text) list.push({ key: 'text', label: '文本', children: text });
     list.push({ key: 'advanced', label: '高级', children: advanced });
     return list;
-    // 仅依赖 widget 引用与 selectedIds；patch / remove 来自 store 稳定
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [widget]);
+  }, [patch, removeWidget, widget]);
 
   /** 头部展示信息 */
   const headerInfo = useMemo(() => {
