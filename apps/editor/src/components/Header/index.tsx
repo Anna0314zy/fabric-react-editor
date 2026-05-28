@@ -1,16 +1,18 @@
 import { useState } from 'react';
-import { Button, Space, Tooltip } from 'antd';
+import { Button, Select, Space, Tooltip, Typography } from 'antd';
 import {
   UndoOutlined,
   RedoOutlined,
   ZoomInOutlined,
   ZoomOutOutlined,
+  ExpandOutlined,
   SaveOutlined,
   ExportOutlined,
   DeleteOutlined,
   KeyOutlined,
 } from '@ant-design/icons';
 import { useEditorStore } from '@/store';
+import type { CanvasAspect } from '@/store';
 import { history, useHistory } from '@/core/history';
 import ShortcutPanel from '@/components/ShortcutPanel';
 import styles from './style.module.scss';
@@ -20,11 +22,19 @@ const Header = () => {
   const { canUndo, canRedo } = useHistory();
   const removeWidget = useEditorStore((s) => s.removeWidget);
   const selectedIds = useEditorStore((s) => s.selectedIds);
+  const page = useEditorStore((s) => s.pages[s.activePageId]);
+  const zoom = useEditorStore((s) => s.zoom);
+  const setZoom = useEditorStore((s) => s.setZoom);
+  const zoomIn = useEditorStore((s) => s.zoomIn);
+  const zoomOut = useEditorStore((s) => s.zoomOut);
+  const setPageAspect = useEditorStore((s) => s.setPageAspect);
   const [shortcutPanelOpen, setShortcutPanelOpen] = useState(false);
 
   const handleDelete = () => {
     selectedIds.forEach((id) => removeWidget(id));
   };
+
+  const aspect: CanvasAspect = page && page.width / page.height > 1.5 ? '16:9' : '4:3';
 
   return (
     <div className={styles.header}>
@@ -50,11 +60,27 @@ const Header = () => {
             />
           </Tooltip>
           <Tooltip title="放大">
-            <Button icon={<ZoomInOutlined />} type="text" />
+            <Button icon={<ZoomInOutlined />} type="text" onClick={zoomIn} />
           </Tooltip>
           <Tooltip title="缩小">
-            <Button icon={<ZoomOutOutlined />} type="text" />
+            <Button icon={<ZoomOutOutlined />} type="text" onClick={zoomOut} />
           </Tooltip>
+          <Tooltip title="适应窗口">
+            <Button icon={<ExpandOutlined />} type="text" onClick={() => setZoom(zoom, 'fit')} />
+          </Tooltip>
+          <Typography.Text type="secondary" style={{ minWidth: 44, textAlign: 'center' }}>
+            {Math.round(zoom * 100)}%
+          </Typography.Text>
+          <Select
+            size="small"
+            value={aspect}
+            style={{ width: 84 }}
+            options={[
+              { label: '16:9', value: '16:9' },
+              { label: '4:3', value: '4:3' },
+            ]}
+            onChange={(value) => setPageAspect(value)}
+          />
           <Tooltip title="删除">
             <Button
               icon={<DeleteOutlined />}

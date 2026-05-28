@@ -2,9 +2,31 @@
 
 .container {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   background: $color-bg-canvas;
-  overflow: hidden;
+  overflow: auto;
+  padding: $spacing-xl;
+  contain: layout paint;
+}
+
+.viewport {
+  position: relative;
+  flex-shrink: 0;
+  width: calc(var(--page-width) * var(--zoom));
+  height: calc(var(--page-height) * var(--zoom));
+  contain: layout size;
+}
+
+.stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--page-width);
+  height: var(--page-height);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: scale(var(--zoom)) translateZ(0);
+  transform-origin: top left;
+  will-change: transform;
+  contain: layout paint;
 }

@@ -37,6 +37,8 @@ const Canvas = () => {
   const pageWidth = page?.width;
   const pageHeight = page?.height;
   const pageBackground = page?.background;
+  const zoom = useEditorStore((s) => s.zoom);
+  const zoomMode = useEditorStore((s) => s.zoomMode);
   const rootIds = useEditorStore((s) => s.rootIds[activePageId]);
   const widgetPatchVersion = useEditorStore((s) => s.widgetPatchVersion);
   const selectedIds = useEditorStore((s) => s.selectedIds);
@@ -132,6 +134,26 @@ const Canvas = () => {
     canvas.backgroundColor = pageBackground;
     canvas.requestRenderAll();
   }, [pageBackground]);
+
+  // fit 模式：根据中间容器尺寸自动计算显示缩放，窗口变化时同步适配。
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !pageWidth || !pageHeight || zoomMode !== 'fit') return;
+
+    const fit = () => {
+      const padding = 64;
+      const availableWidth = Math.max(1, container.clientWidth - padding);
+      const availableHeight = Math.max(1, container.clientHeight - padding);
+      const nextZoom = Math.min(1, availableWidth / pageWidth, availableHeight / pageHeight);
+      useEditorStore.getState().setZoom(nextZoom, 'fit');
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [pageHeight, pageWidth, zoomMode]);
+
   // 结构同步：只在根层级变化时处理新增、删除和 z-index。
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -232,7 +254,20 @@ const Canvas = () => {
 
   return (
     <div className={styles.container} ref={containerRef}>
-      <canvas ref={canvasElRef} />
+      {pageWidth && pageHeight ? (
+        <div
+          className={styles.viewport}
+          style={{
+            '--page-width': `${pageWidth}px`,
+            '--page-height': `${pageHeight}px`,
+            '--zoom': zoom,
+          }}
+        >
+          <div className={styles.stage}>
+            <canvas ref={canvasElRef} />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

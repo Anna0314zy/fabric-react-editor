@@ -17,6 +17,18 @@ import {
   type RemoveSnapshot,
 } from '@/core/history/commands';
 
+export type CanvasAspect = '16:9' | '4:3';
+export type ZoomMode = 'fit' | 'manual';
+
+const CANVAS_SIZE_BY_ASPECT: Record<CanvasAspect, Pick<PageData, 'width' | 'height'>> = {
+  '16:9': { width: 1280, height: 720 },
+  '4:3': { width: 1024, height: 768 },
+};
+
+const ZOOM_STEP = 0.1;
+const clampZoom = (zoom: number): number => Math.min(4, Math.max(0.1, zoom));
+const normalizeZoom = (zoom: number): number => Number(clampZoom(zoom).toFixed(3));
+
 /** 编辑器全局状态 */
 interface EditorState {
   // ========================
@@ -49,6 +61,8 @@ interface EditorState {
   editingTextId?: string;
   /** 缩放比例 */
   zoom: number;
+  /** 缩放模式：fit 随容器变化自动适应，manual 由用户手动控制 */
+  zoomMode: ZoomMode;
   /** 画布平移偏移 */
   pan: { x: number; y: number };
 
@@ -75,6 +89,10 @@ interface EditorState {
   // ui actions
   setActivePage: (pageId: string) => void;
   setSelectedIds: (ids: string[]) => void;
+  setZoom: (zoom: number, mode?: ZoomMode) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  setPageAspect: (aspect: CanvasAspect) => void;
 }
 
 export const useEditorStore = create<EditorState>((set) => ({
@@ -92,6 +110,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   hoveredId: undefined,
   editingTextId: undefined,
   zoom: 1,
+  zoomMode: 'fit',
   pan: { x: 0, y: 0 },
 
   // ========================
@@ -261,4 +280,24 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setActivePage: (pageId) => set({ activePageId: pageId, selectedIds: [] }),
   setSelectedIds: (ids) => set({ selectedIds: ids }),
+  setZoom: (zoom, mode = 'manual') => set({ zoom: normalizeZoom(zoom), zoomMode: mode }),
+  zoomIn: () =>
+    set((state) => ({ zoom: normalizeZoom(state.zoom + ZOOM_STEP), zoomMode: 'manual' })),
+  zoomOut: () =>
+    set((state) => ({ zoom: normalizeZoom(state.zoom - ZOOM_STEP), zoomMode: 'manual' })),
+  setPageAspect: (aspect) =>
+    set((state) => {
+      const page = state.pages[state.activePageId];
+      if (!page) return state;
+      return {
+        pages: {
+          ...state.pages,
+          [page.id]: {
+            ...page,
+            ...CANVAS_SIZE_BY_ASPECT[aspect],
+          },
+        },
+        zoomMode: 'fit',
+      };
+    }),
 }));
