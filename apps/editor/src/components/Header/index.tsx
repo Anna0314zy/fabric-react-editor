@@ -13,13 +13,14 @@ import {
 } from '@ant-design/icons';
 import { useEditorStore } from '@/store';
 import type { CanvasAspect } from '@/store';
-import { history, useHistory } from '@/core/history';
+import { canvasEngine } from '@/core/engine';
+import { history, useHistoryControls } from '@/core/history';
 import ShortcutPanel from '@/components/ShortcutPanel';
 import styles from './style.module.scss';
 
 const Header = () => {
-  // 通过 useSyncExternalStore 订阅 HistoryManager
-  const { canUndo, canRedo } = useHistory();
+  // Header 只关心按钮可用状态，避免 history.version 变化时被拖拽更新带着重渲染。
+  const { canUndo, canRedo } = useHistoryControls();
   const removeWidget = useEditorStore((s) => s.removeWidget);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const page = useEditorStore((s) => s.pages[s.activePageId]);
@@ -32,6 +33,17 @@ const Header = () => {
 
   const handleDelete = () => {
     selectedIds.forEach((id) => removeWidget(id));
+  };
+
+  const handleExport = () => {
+    if (!page) return;
+    const dataUrl = canvasEngine.exportPNG({ format: 'png', multiplier: 1 });
+    if (!dataUrl) return;
+
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `${page.name || 'page'}.png`;
+    link.click();
   };
 
   const aspect: CanvasAspect = page && page.width / page.height > 1.5 ? '16:9' : '4:3';
@@ -98,7 +110,7 @@ const Header = () => {
             <Button icon={<KeyOutlined />} type="text" onClick={() => setShortcutPanelOpen(true)} />
           </Tooltip>
           <Button icon={<SaveOutlined />}>保存</Button>
-          <Button icon={<ExportOutlined />} type="primary">
+          <Button icon={<ExportOutlined />} type="primary" onClick={handleExport}>
             导出
           </Button>
         </Space>
