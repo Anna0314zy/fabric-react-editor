@@ -13,6 +13,36 @@ export function useHistory(): HistorySnapshot {
   return useSyncExternalStore(history.subscribe, history.getSnapshot, history.getSnapshot);
 }
 
+interface HistoryControlsSnapshot {
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+}
+
+let historyControlsSnapshot: HistoryControlsSnapshot = {
+  canUndo: history.getSnapshot().canUndo,
+  canRedo: history.getSnapshot().canRedo,
+};
+
+function getHistoryControlsSnapshot(): HistoryControlsSnapshot {
+  const { canUndo, canRedo } = history.getSnapshot();
+  if (historyControlsSnapshot.canUndo !== canUndo || historyControlsSnapshot.canRedo !== canRedo) {
+    historyControlsSnapshot = { canUndo, canRedo };
+  }
+  return historyControlsSnapshot;
+}
+
+/**
+ * 只订阅撤销 / 重做按钮真正需要的状态。
+ * 拖拽结束会写入 history.version，但如果 canUndo / canRedo 没变，Header 不需要重渲染。
+ */
+export function useHistoryControls(): HistoryControlsSnapshot {
+  return useSyncExternalStore(
+    history.subscribe,
+    getHistoryControlsSnapshot,
+    getHistoryControlsSnapshot,
+  );
+}
+
 export { HistoryManager } from './manager';
 export type { HistorySnapshot } from './manager';
 export type { Command } from './types';

@@ -1,7 +1,7 @@
 /**
  * 历史命令接口
  * - execute / undo 内部直接读写 store
- * - merge 用于连续小操作合并（如拖拽时的 move），返回非 null 时替换栈顶命令
+ * - merge 只用于调用方明确声明为同一次用户动作的连续更新
  */
 export interface Command {
   /** 命令名称，用于调试与 merge 类型判断 */
