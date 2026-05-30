@@ -74,6 +74,16 @@ export interface PathProps {
   path?: string;
 }
 
+export interface GroupLayout {
+  mode: 'none' | 'grid';
+  columns: number;
+  gapX: number;
+  gapY: number;
+  paddingX: number;
+  paddingY: number;
+  stretch: boolean;
+}
+
 /** Widget 基类 */
 export interface BaseWidget extends BaseTransform, BaseAppearance {
   /** uuid 生成的唯一 id */
@@ -95,4 +105,4 @@ export type Widget =
   | (BaseWidget & { type: 'text' | 'i-text' } & TextProps)
   | (BaseWidget & { type: 'image' | 'svg' } & ImageProps)
   | (BaseWidget & { type: 'line' | 'arrow' | 'path' } & PathProps)
-  | (BaseWidget & { type: 'group'; childrenIds: string[] });
+  | (BaseWidget & { type: 'group'; childrenIds: string[]; layout?: GroupLayout });

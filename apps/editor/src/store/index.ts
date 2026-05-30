@@ -7,15 +7,20 @@ import {
   PRESET_WIDGETS,
 } from '../constants/presets';
 import type { PageData } from '../types/page';
-import type { Widget } from '../types/widget';
+import type { GroupLayout, Widget } from '../types/widget';
 import { history } from '@/core/history';
 import {
+  ApplyGroupLayoutCommand,
   AddWidgetCommand,
   RemoveWidgetCommand,
   ReorderWidgetCommand,
-  UpdateWidgetCommand,
+  PatchWidgetsCommand,
+  GroupWidgetsCommand,
+  UngroupWidgetCommand,
+  type PatchWidgetsCommandOptions,
   type RemoveSnapshot,
 } from '@/core/history/commands';
+import { computeGroupLayoutPatches } from '@/core/layout/groupLayout';
 
 export type CanvasAspect = '16:9' | '4:3';
 export type ZoomMode = 'fit' | 'manual';
@@ -28,6 +33,30 @@ const CANVAS_SIZE_BY_ASPECT: Record<CanvasAspect, Pick<PageData, 'width' | 'heig
 const ZOOM_STEP = 0.1;
 const clampZoom = (zoom: number): number => Math.min(4, Math.max(0.1, zoom));
 const normalizeZoom = (zoom: number): number => Number(clampZoom(zoom).toFixed(3));
+
+function getChangedPatch(widget: Widget | undefined, patch: Partial<Widget>): Partial<Widget> {
+  if (!widget) return {};
+
+  const changed: Record<string, unknown> = {};
+  Object.entries(patch).forEach(([key, value]) => {
+    if (!Object.is((widget as unknown as Record<string, unknown>)[key], value)) {
+      changed[key] = value;
+    }
+  });
+  return changed as Partial<Widget>;
+}
+
+function getChangedWidgetPatches(
+  widgets: Record<string, Widget>,
+  patches: Record<string, Partial<Widget>>,
+): Record<string, Partial<Widget>> {
+  return Object.fromEntries(
+    Object.entries(patches).flatMap(([id, patch]) => {
+      const changed = getChangedPatch(widgets[id], patch);
+      return Object.keys(changed).length > 0 ? [[id, changed]] : [];
+    }),
+  );
+}
 
 /** 编辑器全局状态 */
 interface EditorState {
@@ -55,6 +84,8 @@ interface EditorState {
   activePageId: string;
   /** 当前选中 widget id 列表（支持多选） */
   selectedIds: string[];
+  /** 当前在 group 内聚焦的子 widget id；父 group 仍然保持选中态 */
+  focusedChildId?: string;
   /** 当前 hover 的 widget id */
   hoveredId?: string;
   /** 正在编辑文本的 widget id */
@@ -70,9 +101,16 @@ interface EditorState {
   // mutators（仅内部，不进历史）
   // ========================
   _addWidget: (widget: Widget) => void;
-  _updateWidget: (id: string, patch: Partial<Widget>) => void;
   _removeWidget: (id: string) => void;
   _reorderWidget: (pageId: string, from: number, to: number) => void;
+  _groupWidgets: (group: Extract<Widget, { type: 'group' }>, ids: string[]) => void;
+  _ungroupWidget: (groupId: string) => void;
+  _applyWidgetPatches: (patches: Record<string, Partial<Widget>>) => void;
+  _applyGroupLayout: (
+    groupId: string,
+    layout: GroupLayout,
+    childPatches: Record<string, Partial<Widget>>,
+  ) => void;
   /** 还原被删除子树（供 RemoveWidgetCommand.undo 使用） */
   _restoreWidgets: (snapshot: RemoveSnapshot) => void;
   /** 清理已被 Canvas 消费的属性 patch */
@@ -82,13 +120,22 @@ interface EditorState {
   // actions（对外，走 history）
   // ========================
   addWidget: (widget: Widget) => void;
-  updateWidget: (id: string, patch: Partial<Widget>) => void;
+  updateWidget: (id: string, patch: Partial<Widget>, options?: PatchWidgetsCommandOptions) => void;
+  updateWidgets: (
+    patches: Record<string, Partial<Widget>>,
+    options?: PatchWidgetsCommandOptions,
+  ) => void;
   removeWidget: (id: string) => void;
   reorderWidget: (pageId: string, from: number, to: number) => void;
+  groupWidgets: (group: Extract<Widget, { type: 'group' }>, ids: string[]) => void;
+  ungroupWidget: (groupId: string) => void;
+  applyGroupLayout: (groupId: string, layout: GroupLayout) => void;
+  getGroupLayoutPatches: (groupId: string, layout: GroupLayout) => Record<string, Partial<Widget>>;
 
   // ui actions
   setActivePage: (pageId: string) => void;
   setSelectedIds: (ids: string[]) => void;
+  setFocusedChildId: (id?: string) => void;
   setZoom: (zoom: number, mode?: ZoomMode) => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -107,6 +154,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   // ui
   activePageId: PRESET_ACTIVE_PAGE_ID,
   selectedIds: [],
+  focusedChildId: undefined,
   hoveredId: undefined,
   editingTextId: undefined,
   zoom: 1,
@@ -130,26 +178,6 @@ export const useEditorStore = create<EditorState>((set) => ({
       return {
         widgets,
         childIds: { ...state.childIds, [widget.parentId]: [...list, widget.id] },
-      };
-    }),
-
-  _updateWidget: (id, patch) =>
-    set((state) => {
-      const target = state.widgets[id];
-      if (!target) return state;
-      return {
-        widgets: {
-          ...state.widgets,
-          [id]: { ...target, ...patch } as Widget,
-        },
-        widgetPatches: {
-          ...state.widgetPatches,
-          [id]: {
-            ...(state.widgetPatches[id] ?? {}),
-            ...patch,
-          },
-        },
-        widgetPatchVersion: state.widgetPatchVersion + 1,
       };
     }),
 
@@ -202,12 +230,17 @@ export const useEditorStore = create<EditorState>((set) => ({
         state.hoveredId && toRemove.has(state.hoveredId) ? undefined : state.hoveredId;
       const editingTextId =
         state.editingTextId && toRemove.has(state.editingTextId) ? undefined : state.editingTextId;
+      const focusedChildId =
+        state.focusedChildId && toRemove.has(state.focusedChildId)
+          ? undefined
+          : state.focusedChildId;
 
       return {
         widgets,
         rootIds,
         childIds: cleanedChildIds,
         selectedIds,
+        focusedChildId,
         hoveredId,
         editingTextId,
         widgetPatches: Object.fromEntries(
@@ -227,6 +260,118 @@ export const useEditorStore = create<EditorState>((set) => ({
       if (moved === undefined) return state;
       next.splice(to, 0, moved);
       return { rootIds: { ...state.rootIds, [pageId]: next } };
+    }),
+
+  _groupWidgets: (group, ids) =>
+    set((state) => {
+      const rootList = state.rootIds[group.pageId] ?? [];
+      const idsSet = new Set(ids);
+      const orderedIds = rootList.filter((id) => idsSet.has(id));
+      if (orderedIds.length < 2) return state;
+
+      const insertIndex = rootList.findIndex((id) => idsSet.has(id));
+      if (insertIndex < 0) return state;
+
+      const widgets = { ...state.widgets, [group.id]: group };
+      orderedIds.forEach((id) => {
+        const widget = widgets[id];
+        if (!widget) return;
+        widgets[id] = { ...widget, parentId: group.id } as Widget;
+      });
+
+      const nextRootIds = rootList.filter((id) => !idsSet.has(id));
+      nextRootIds.splice(insertIndex, 0, group.id);
+
+      return {
+        widgets,
+        rootIds: { ...state.rootIds, [group.pageId]: nextRootIds },
+        childIds: { ...state.childIds, [group.id]: orderedIds },
+        selectedIds: [group.id],
+        focusedChildId: undefined,
+      };
+    }),
+
+  _ungroupWidget: (groupId) =>
+    set((state) => {
+      const group = state.widgets[groupId];
+      if (!group || group.type !== 'group') return state;
+
+      const children = state.childIds[groupId] ?? group.childrenIds;
+      const rootList = state.rootIds[group.pageId] ?? [];
+      const groupIndex = rootList.indexOf(groupId);
+      if (groupIndex < 0) return state;
+
+      const widgets = { ...state.widgets };
+      delete widgets[groupId];
+      children.forEach((id) => {
+        const widget = widgets[id];
+        if (!widget) return;
+        widgets[id] = { ...widget, parentId: null } as Widget;
+      });
+
+      const nextRootIds = rootList.filter((id) => id !== groupId);
+      nextRootIds.splice(groupIndex, 0, ...children);
+
+      const childIds = { ...state.childIds };
+      delete childIds[groupId];
+
+      return {
+        widgets,
+        rootIds: { ...state.rootIds, [group.pageId]: nextRootIds },
+        childIds,
+        selectedIds: children,
+        focusedChildId: undefined,
+      };
+    }),
+
+  _applyWidgetPatches: (patches) =>
+    set((state) => {
+      const entries = Object.entries(patches).filter(([id]) => !!state.widgets[id]);
+      if (entries.length === 0) return state;
+
+      const widgets = { ...state.widgets };
+      const widgetPatches = { ...state.widgetPatches };
+      entries.forEach(([id, patch]) => {
+        widgets[id] = { ...widgets[id]!, ...patch } as Widget;
+        widgetPatches[id] = {
+          ...(widgetPatches[id] ?? {}),
+          ...patch,
+        };
+      });
+
+      return {
+        widgets,
+        widgetPatches,
+        widgetPatchVersion: state.widgetPatchVersion + 1,
+      };
+    }),
+
+  _applyGroupLayout: (groupId, layout, childPatches) =>
+    set((state) => {
+      const group = state.widgets[groupId];
+      if (!group || group.type !== 'group') return state;
+
+      const patches: Record<string, Partial<Widget>> = {
+        [groupId]: { layout } as Partial<Widget>,
+        ...childPatches,
+      };
+      const widgets = { ...state.widgets };
+      const widgetPatches = { ...state.widgetPatches };
+      Object.entries(patches).forEach(([id, patch]) => {
+        const widget = widgets[id];
+        if (!widget) return;
+        widgets[id] = { ...widget, ...patch } as Widget;
+        widgetPatches[id] = {
+          ...(widgetPatches[id] ?? {}),
+          ...patch,
+        };
+      });
+
+      return {
+        widgets,
+        widgetPatches,
+        widgetPatchVersion: state.widgetPatchVersion + 1,
+      };
     }),
 
   _restoreWidgets: (snapshot) =>
@@ -274,12 +419,55 @@ export const useEditorStore = create<EditorState>((set) => ({
   // actions
   // ========================
   addWidget: (widget) => history.dispatch(new AddWidgetCommand(widget)),
-  updateWidget: (id, patch) => history.dispatch(new UpdateWidgetCommand(id, patch)),
+  updateWidget: (id, patch, options) => {
+    const changedPatch = getChangedPatch(useEditorStore.getState().widgets[id], patch);
+    if (Object.keys(changedPatch).length === 0) return;
+    history.dispatch(new PatchWidgetsCommand({ [id]: changedPatch }, options));
+  },
+  updateWidgets: (patches, options) => {
+    const changedPatches = getChangedWidgetPatches(useEditorStore.getState().widgets, patches);
+    if (Object.keys(changedPatches).length === 0) return;
+    history.dispatch(new PatchWidgetsCommand(changedPatches, options));
+  },
   removeWidget: (id) => history.dispatch(new RemoveWidgetCommand(id)),
   reorderWidget: (pageId, from, to) => history.dispatch(new ReorderWidgetCommand(pageId, from, to)),
+  groupWidgets: (group, ids) => history.dispatch(new GroupWidgetsCommand(group, ids)),
+  ungroupWidget: (groupId) => history.dispatch(new UngroupWidgetCommand(groupId)),
+  applyGroupLayout: (groupId, layout) =>
+    history.dispatch(new ApplyGroupLayoutCommand(groupId, layout)),
+  getGroupLayoutPatches: (groupId, layout) => {
+    const state = useEditorStore.getState();
+    const group = state.widgets[groupId];
+    if (!group || group.type !== 'group') return {};
+    const children = (state.childIds[groupId] ?? group.childrenIds)
+      .map((id) => state.widgets[id])
+      .filter((widget): widget is Widget => !!widget);
+    return computeGroupLayoutPatches(group, children, layout);
+  },
 
-  setActivePage: (pageId) => set({ activePageId: pageId, selectedIds: [] }),
-  setSelectedIds: (ids) => set({ selectedIds: ids }),
+  setActivePage: (pageId) =>
+    set({ activePageId: pageId, selectedIds: [], focusedChildId: undefined }),
+  setSelectedIds: (ids) =>
+    set((state) => {
+      const focusedWidget = state.focusedChildId ? state.widgets[state.focusedChildId] : undefined;
+      const shouldKeepFocusedChild =
+        ids.length === 1 &&
+        focusedWidget?.parentId === ids[0] &&
+        state.widgets[ids[0]]?.type === 'group';
+      return {
+        selectedIds: ids,
+        focusedChildId: shouldKeepFocusedChild ? state.focusedChildId : undefined,
+      };
+    }),
+  setFocusedChildId: (id) =>
+    set((state) => {
+      if (!id) return { focusedChildId: undefined };
+      const widget = state.widgets[id];
+      if (!widget?.parentId || state.selectedIds[0] !== widget.parentId) {
+        return state;
+      }
+      return { focusedChildId: id };
+    }),
   setZoom: (zoom, mode = 'manual') => set({ zoom: normalizeZoom(zoom), zoomMode: mode }),
   zoomIn: () =>
     set((state) => ({ zoom: normalizeZoom(state.zoom + ZOOM_STEP), zoomMode: 'manual' })),
@@ -301,3 +489,13 @@ export const useEditorStore = create<EditorState>((set) => ({
       };
     }),
 }));
+
+declare global {
+  interface Window {
+    __EDITOR_STORE__?: typeof useEditorStore;
+  }
+}
+
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  window.__EDITOR_STORE__ = useEditorStore;
+}

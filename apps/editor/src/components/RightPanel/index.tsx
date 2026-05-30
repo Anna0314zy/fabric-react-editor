@@ -32,6 +32,8 @@ const Row = ({ label, children }: { label: string; children: React.ReactNode }) 
 const isTextWidget = (w: Widget): w is Extract<Widget, { type: 'text' | 'i-text' }> =>
   w.type === 'text' || w.type === 'i-text';
 
+const isGroupWidget = (w: Widget): w is Extract<Widget, { type: 'group' }> => w.type === 'group';
+
 interface BufferedNumberProps {
   min?: number;
   value: number;
@@ -132,12 +134,13 @@ const BufferedSlider = ({ value, onCommit }: BufferedSliderProps) => {
 
 const RightPanel = () => {
   const selectedIds = useEditorStore((s) => s.selectedIds);
-  const widget = useEditorStore((s) =>
-    selectedIds.length === 1 ? s.widgets[selectedIds[0]!] : undefined,
-  );
+  const focusedChildId = useEditorStore((s) => s.focusedChildId);
+  const widget = useEditorStore((s) => {
+    const id = focusedChildId ?? (selectedIds.length === 1 ? selectedIds[0] : undefined);
+    return id ? s.widgets[id] : undefined;
+  });
   const updateWidget = useEditorStore((s) => s.updateWidget);
   const removeWidget = useEditorStore((s) => s.removeWidget);
-
   /** 统一的属性写入 */
   const patch = useCallback(
     (p: Partial<Widget>) => {
@@ -149,6 +152,7 @@ const RightPanel = () => {
 
   const items = useMemo(() => {
     if (!widget) return [];
+    const isGroup = isGroupWidget(widget);
 
     /** 位置与尺寸 */
     const position = (
@@ -159,20 +163,24 @@ const RightPanel = () => {
         <Row label="Y">
           <BufferedNumber value={Math.round(widget.top)} onCommit={(v) => patch({ top: v })} />
         </Row>
-        <Row label="宽">
-          <BufferedNumber
-            min={1}
-            value={Math.round(widget.width)}
-            onCommit={(v) => patch({ width: v })}
-          />
-        </Row>
-        <Row label="高">
-          <BufferedNumber
-            min={1}
-            value={Math.round(widget.height)}
-            onCommit={(v) => patch({ height: v })}
-          />
-        </Row>
+        {!isGroup ? (
+          <>
+            <Row label="宽">
+              <BufferedNumber
+                min={1}
+                value={Math.round(widget.width)}
+                onCommit={(v) => patch({ width: v })}
+              />
+            </Row>
+            <Row label="高">
+              <BufferedNumber
+                min={1}
+                value={Math.round(widget.height)}
+                onCommit={(v) => patch({ height: v })}
+              />
+            </Row>
+          </>
+        ) : null}
         <Row label="旋转">
           <Space.Compact size="small">
             <BufferedNumber
@@ -198,29 +206,33 @@ const RightPanel = () => {
     /** 外观 */
     const appearance = (
       <div className={styles.group}>
-        <Row label="填充">
-          <ColorPicker
-            size="small"
-            value={widget.fill ?? '#000000'}
-            onChangeComplete={(c) => patch({ fill: toHex(c) })}
-            showText
-          />
-        </Row>
-        <Row label="描边">
-          <ColorPicker
-            size="small"
-            value={widget.stroke ?? '#000000'}
-            onChangeComplete={(c) => patch({ stroke: toHex(c) })}
-            showText
-          />
-        </Row>
-        <Row label="描边粗细">
-          <BufferedNumber
-            min={0}
-            value={widget.strokeWidth ?? 0}
-            onCommit={(v) => patch({ strokeWidth: v })}
-          />
-        </Row>
+        {!isGroup ? (
+          <>
+            <Row label="填充">
+              <ColorPicker
+                size="small"
+                value={widget.fill ?? '#000000'}
+                onChangeComplete={(c) => patch({ fill: toHex(c) })}
+                showText
+              />
+            </Row>
+            <Row label="描边">
+              <ColorPicker
+                size="small"
+                value={widget.stroke ?? '#000000'}
+                onChangeComplete={(c) => patch({ stroke: toHex(c) })}
+                showText
+              />
+            </Row>
+            <Row label="描边粗细">
+              <BufferedNumber
+                min={0}
+                value={widget.strokeWidth ?? 0}
+                onCommit={(v) => patch({ strokeWidth: v })}
+              />
+            </Row>
+          </>
+        ) : null}
         <Row label="不透明度">
           <BufferedSlider value={widget.opacity ?? 1} onCommit={(v) => patch({ opacity: v })} />
         </Row>
