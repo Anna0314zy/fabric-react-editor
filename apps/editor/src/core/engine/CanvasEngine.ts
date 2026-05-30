@@ -1,8 +1,8 @@
 import * as fabric from 'fabric';
-import type { Widget } from '@/types/widget';
 
 /** 对齐方式 */
 export type AlignType = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
+export type AlignDelta = Record<string, { dx: number; dy: number }>;
 
 /**
  * 画布视图引擎
@@ -132,19 +132,16 @@ export class CanvasEngine {
     return this.objectMap.get(id)?.getBoundingRect() ?? null;
   }
 
-  /**
-   * 计算多目标对齐后的位置 patch 列表
-   * 仅做几何计算，不直接写 store；由 Command 层拿 patch 调 updateWidget 进入 history
-   */
-  align(ids: string[], type: AlignType): Array<{ id: string; patch: Partial<Widget> }> {
+  /** 计算多目标对齐所需的画布坐标位移量。 */
+  align(ids: string[], type: AlignType): AlignDelta {
     const targets = ids
       .map((id) => {
-        const obj = this.objectMap.get(id);
-        return obj ? { id, obj, box: obj.getBoundingRect() } : null;
+        const box = this.objectMap.get(id)?.getBoundingRect();
+        return box ? { id, box } : null;
       })
-      .filter((t): t is { id: string; obj: fabric.Object; box: fabric.TBBox } => !!t);
+      .filter((t): t is { id: string; box: fabric.TBBox } => !!t);
 
-    if (targets.length < 2) return [];
+    if (targets.length < 2) return {};
 
     // 以所有目标的并集包围盒为对齐基准
     const minLeft = Math.min(...targets.map((t) => t.box.left));
@@ -154,34 +151,32 @@ export class CanvasEngine {
     const centerX = (minLeft + maxRight) / 2;
     const centerY = (minTop + maxBottom) / 2;
 
-    return targets.map(({ id, obj, box }) => {
-      // 包围盒左上角 -> 对象 left/top 的偏移量
-      const dx = (obj.left ?? 0) - box.left;
-      const dy = (obj.top ?? 0) - box.top;
-      let nextLeft = obj.left ?? 0;
-      let nextTop = obj.top ?? 0;
+    return targets.reduce<AlignDelta>((deltas, { id, box }) => {
+      let dx = 0;
+      let dy = 0;
       switch (type) {
         case 'left':
-          nextLeft = minLeft + dx;
+          dx = minLeft - box.left;
           break;
         case 'centerX':
-          nextLeft = centerX - box.width / 2 + dx;
+          dx = centerX - (box.left + box.width / 2);
           break;
         case 'right':
-          nextLeft = maxRight - box.width + dx;
+          dx = maxRight - (box.left + box.width);
           break;
         case 'top':
-          nextTop = minTop + dy;
+          dy = minTop - box.top;
           break;
         case 'centerY':
-          nextTop = centerY - box.height / 2 + dy;
+          dy = centerY - (box.top + box.height / 2);
           break;
         case 'bottom':
-          nextTop = maxBottom - box.height + dy;
+          dy = maxBottom - (box.top + box.height);
           break;
       }
-      return { id, patch: { left: nextLeft, top: nextTop } as Partial<Widget> };
-    });
+      deltas[id] = { dx, dy };
+      return deltas;
+    }, {});
   }
 
   // ========================
