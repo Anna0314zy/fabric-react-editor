@@ -10,6 +10,7 @@ import {
   UnlockOutlined,
 } from '@ant-design/icons';
 import { useEditorStore } from '@/store';
+import type { Widget } from '@/types/widget';
 import styles from './style.module.scss';
 
 const LAYER_ROW_HEIGHT = 48;
@@ -18,12 +19,49 @@ const LAYER_OVERSCAN = 6;
 
 interface LayerRowProps {
   widgetId: string;
-  sourceIndex: number;
-  rootCount: number;
+  sourceIndex?: number;
+  rootCount?: number;
   virtualIndex: number;
+  depth: number;
+  isRoot: boolean;
 }
 
-const LayerRow = ({ widgetId, sourceIndex, rootCount, virtualIndex }: LayerRowProps) => {
+interface LayerTreeItem {
+  id: string;
+  depth: number;
+  rootIndex?: number;
+  isRoot: boolean;
+}
+
+const buildLayerTree = (
+  rootIds: string[],
+  widgets: Record<string, Widget>,
+  childIds: Record<string, string[]>,
+): LayerTreeItem[] => {
+  const result: LayerTreeItem[] = [];
+
+  const visit = (id: string, depth: number, rootIndex?: number) => {
+    const widget = widgets[id];
+    if (!widget) return;
+    result.push({ id, depth, rootIndex, isRoot: depth === 0 });
+
+    if (widget.type !== 'group') return;
+    const children = childIds[id] ?? widget.childrenIds;
+    children.forEach((childId) => visit(childId, depth + 1));
+  };
+
+  [...rootIds].reverse().forEach((id) => visit(id, 0, rootIds.indexOf(id)));
+  return result;
+};
+
+const LayerRow = ({
+  widgetId,
+  sourceIndex,
+  rootCount,
+  virtualIndex,
+  depth,
+  isRoot,
+}: LayerRowProps) => {
   const activePageId = useEditorStore((s) => s.activePageId);
   const widget = useEditorStore((s) => s.widgets[widgetId]);
   const isSelected = useEditorStore((s) => s.selectedIds.includes(widgetId));
@@ -39,9 +77,13 @@ const LayerRow = ({ widgetId, sourceIndex, rootCount, virtualIndex }: LayerRowPr
   const isLocked = !!widget.locked;
 
   const handleMoveLayer = (direction: 'up' | 'down') => {
+    if (sourceIndex === undefined) return;
     const to = direction === 'up' ? sourceIndex + 1 : sourceIndex - 1;
     reorderWidget(activePageId, sourceIndex, to);
   };
+  const canMoveLayer = isRoot && sourceIndex !== undefined && rootCount !== undefined;
+  const disableMoveUp = !canMoveLayer || sourceIndex! >= rootCount! - 1;
+  const disableMoveDown = !canMoveLayer || sourceIndex! <= 0;
 
   return (
     <div
@@ -49,8 +91,13 @@ const LayerRow = ({ widgetId, sourceIndex, rootCount, virtualIndex }: LayerRowPr
       style={{ transform: `translateY(${virtualIndex * LAYER_ROW_HEIGHT}px)` }}
     >
       <div
-        className={`${styles.layerItem} ${isSelected ? styles.selectedLayer : ''}`}
-        onClick={() => setSelectedIds([widgetId])}
+        className={`${styles.layerItem} ${isSelected ? styles.selectedLayer : ''} ${
+          isRoot ? '' : styles.childLayer
+        }`}
+        onClick={() => {
+          if (isRoot) setSelectedIds([widgetId]);
+        }}
+        style={{ paddingLeft: 8 + depth * 16 }}
       >
         <div className={styles.layerMeta}>
           <span className={styles.layerName}>{name}</span>
@@ -60,66 +107,68 @@ const LayerRow = ({ widgetId, sourceIndex, rootCount, virtualIndex }: LayerRowPr
           {isHidden ? <EyeInvisibleOutlined /> : null}
           {isLocked ? <LockOutlined /> : null}
         </div>
-        <div className={styles.layerActions}>
-          <Button
-            title={isHidden ? '显示' : '隐藏'}
-            aria-label={isHidden ? '显示图层' : '隐藏图层'}
-            icon={isHidden ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-            size="small"
-            type="text"
-            onClick={(event) => {
-              event.stopPropagation();
-              updateWidget(widgetId, { visible: isHidden });
-            }}
-          />
-          <Button
-            title={isLocked ? '解锁' : '锁定'}
-            aria-label={isLocked ? '解锁图层' : '锁定图层'}
-            icon={isLocked ? <LockOutlined /> : <UnlockOutlined />}
-            size="small"
-            type="text"
-            onClick={(event) => {
-              event.stopPropagation();
-              updateWidget(widgetId, { locked: !isLocked });
-            }}
-          />
-          <Button
-            title="上移"
-            aria-label="上移图层"
-            disabled={sourceIndex >= rootCount - 1}
-            icon={<ArrowUpOutlined />}
-            size="small"
-            type="text"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleMoveLayer('up');
-            }}
-          />
-          <Button
-            title="下移"
-            aria-label="下移图层"
-            disabled={sourceIndex <= 0}
-            icon={<ArrowDownOutlined />}
-            size="small"
-            type="text"
-            onClick={(event) => {
-              event.stopPropagation();
-              handleMoveLayer('down');
-            }}
-          />
-          <Button
-            title="删除"
-            aria-label="删除图层"
-            danger
-            icon={<DeleteOutlined />}
-            size="small"
-            type="text"
-            onClick={(event) => {
-              event.stopPropagation();
-              removeWidget(widgetId);
-            }}
-          />
-        </div>
+        {isRoot ? (
+          <div className={styles.layerActions}>
+            <Button
+              title={isHidden ? '显示' : '隐藏'}
+              aria-label={isHidden ? '显示图层' : '隐藏图层'}
+              icon={isHidden ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+              size="small"
+              type="text"
+              onClick={(event) => {
+                event.stopPropagation();
+                updateWidget(widgetId, { visible: isHidden });
+              }}
+            />
+            <Button
+              title={isLocked ? '解锁' : '锁定'}
+              aria-label={isLocked ? '解锁图层' : '锁定图层'}
+              icon={isLocked ? <LockOutlined /> : <UnlockOutlined />}
+              size="small"
+              type="text"
+              onClick={(event) => {
+                event.stopPropagation();
+                updateWidget(widgetId, { locked: !isLocked });
+              }}
+            />
+            <Button
+              title="上移"
+              aria-label="上移图层"
+              disabled={disableMoveUp}
+              icon={<ArrowUpOutlined />}
+              size="small"
+              type="text"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleMoveLayer('up');
+              }}
+            />
+            <Button
+              title="下移"
+              aria-label="下移图层"
+              disabled={disableMoveDown}
+              icon={<ArrowDownOutlined />}
+              size="small"
+              type="text"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleMoveLayer('down');
+              }}
+            />
+            <Button
+              title="删除"
+              aria-label="删除图层"
+              danger
+              icon={<DeleteOutlined />}
+              size="small"
+              type="text"
+              onClick={(event) => {
+                event.stopPropagation();
+                removeWidget(widgetId);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -128,40 +177,45 @@ const LayerRow = ({ widgetId, sourceIndex, rootCount, virtualIndex }: LayerRowPr
 const LayerPanel = () => {
   const activePageId = useEditorStore((s) => s.activePageId);
   const rootIds = useEditorStore((s) => s.rootIds[activePageId] ?? []);
+  const widgets = useEditorStore((s) => s.widgets);
+  const childIds = useEditorStore((s) => s.childIds);
   const [scrollTop, setScrollTop] = useState(0);
 
-  const reversedIds = useMemo(() => [...rootIds].reverse(), [rootIds]);
+  const layerTree = useMemo(() => {
+    return buildLayerTree(rootIds, widgets, childIds);
+  }, [childIds, rootIds, widgets]);
   const visibleRange = useMemo(() => {
     const start = Math.max(0, Math.floor(scrollTop / LAYER_ROW_HEIGHT) - LAYER_OVERSCAN);
     const end = Math.min(
-      reversedIds.length,
+      layerTree.length,
       Math.ceil((scrollTop + LAYER_VIEWPORT_HEIGHT) / LAYER_ROW_HEIGHT) + LAYER_OVERSCAN,
     );
     return { start, end };
-  }, [reversedIds.length, scrollTop]);
-  const visibleIds = reversedIds.slice(visibleRange.start, visibleRange.end);
+  }, [layerTree.length, scrollTop]);
+  const visibleItems = layerTree.slice(visibleRange.start, visibleRange.end);
 
   return (
     <>
-      <div className={styles.title}>图层</div>
-      {reversedIds.length > 0 ? (
+      {layerTree.length > 0 ? (
         <div
           className={styles.layerViewport}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         >
           <div
             className={styles.layerVirtualInner}
-            style={{ height: reversedIds.length * LAYER_ROW_HEIGHT }}
+            style={{ height: layerTree.length * LAYER_ROW_HEIGHT }}
           >
-            {visibleIds.map((widgetId, offset) => {
+            {visibleItems.map((item, offset) => {
               const virtualIndex = visibleRange.start + offset;
               return (
                 <LayerRow
-                  key={widgetId}
+                  key={item.id}
+                  depth={item.depth}
+                  isRoot={item.isRoot}
                   rootCount={rootIds.length}
-                  sourceIndex={rootIds.length - 1 - virtualIndex}
+                  sourceIndex={item.rootIndex}
                   virtualIndex={virtualIndex}
-                  widgetId={widgetId}
+                  widgetId={item.id}
                 />
               );
             })}

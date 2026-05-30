@@ -103,6 +103,11 @@
   background: $color-primary-bg;
 }
 
+.childLayer {
+  cursor: default;
+  opacity: 0.72;
+}
+
 .layerMeta {
   min-width: 0;
   flex: 1;
