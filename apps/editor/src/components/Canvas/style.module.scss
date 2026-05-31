@@ -1,6 +1,7 @@
 @use '@/styles/variables' as *;
 
 .container {
+  position: relative;
   flex: 1;
   display: grid;
   place-items: center;

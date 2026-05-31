@@ -99,7 +99,9 @@ export const CanvasFloatingMenu = ({
   const [position, setPosition] = useState<MenuPosition | null>(null);
 
   const widgetsState = useEditorStore.getState().widgets;
-  const widgets = selectedIds.map((id) => widgetsState[id]).filter(Boolean);
+  const widgets = selectedIds
+    .map((id) => widgetsState[id])
+    .filter((widget): widget is NonNullable<typeof widget> => !!widget);
   const primaryWidget = widgets[0];
   const ctx: FloatingMenuContext = {
     selectedIds,

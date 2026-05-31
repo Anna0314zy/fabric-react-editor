@@ -1,10 +1,74 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import * as fabric from 'fabric';
 import { useEditorStore } from '@/store';
-import { applyWidgetPatch, widgetToFabric } from '@/core/canvas/widgetToFabric';
+import { applyWidgetPatch } from '@/core/canvas/widgetToFabric';
+import { widgetTreeToFabric } from '@/core/canvas/widgetTreeToFabric';
 import { canvasEngine } from '@/core/engine';
+import { getRootWidgetId } from '@/core/widget/tree';
+import { CanvasContextMenu, type CanvasContextMenuState } from '@/components/CanvasContextMenu';
+import { CanvasFloatingMenu } from '@/components/CanvasFloatingMenu';
+import { useFloatingMenuVisibility } from '@/components/CanvasFloatingMenu/useFloatingMenuVisibility';
 import type { Widget } from '@/types/widget';
 import styles from './style.module.scss';
+
+type FabricObjectWithData = fabric.Object & {
+  data?: { id?: string; helper?: string };
+};
+
+const CHILD_FOCUS_HELPER = 'group-child-focus';
+
+function getFabricId(obj: fabric.Object | undefined): string | undefined {
+  return (obj as FabricObjectWithData | undefined)?.data?.id;
+}
+
+function pickSubTargetId(
+  event: { target?: fabric.Object; subTargets?: fabric.Object[] },
+  widgets: Record<string, Widget>,
+): { rootId: string; childId: string } | null {
+  const targetId = getFabricId(event.target);
+  const hitIds = [targetId, ...(event.subTargets ?? []).map(getFabricId)].filter(
+    (id): id is string => !!id,
+  );
+  const childId = hitIds.find((id) => widgets[id]?.parentId !== null);
+  if (!childId) return null;
+
+  const rootId = getRootWidgetId(childId, widgets);
+  if (!rootId || widgets[rootId]?.type !== 'group') return null;
+  return { rootId, childId };
+}
+
+function getWidgetCanvasBoundingBox(widget: Widget): fabric.TBBox {
+  const width = widget.width * (widget.scaleX ?? 1);
+  const height = widget.height * (widget.scaleY ?? 1);
+  const rad = fabric.util.degreesToRadians(widget.angle ?? 0);
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const points = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ].map((point) => ({
+    x: widget.left + point.x * cos - point.y * sin,
+    y: widget.top + point.x * sin + point.y * cos,
+  }));
+  const left = Math.min(...points.map((point) => point.x));
+  const top = Math.min(...points.map((point) => point.y));
+  const right = Math.max(...points.map((point) => point.x));
+  const bottom = Math.max(...points.map((point) => point.y));
+  return {
+    left,
+    top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
+type FabricPointerEvent = {
+  e: MouseEvent;
+  target?: fabric.Object;
+  subTargets?: fabric.Object[];
+};
 
 /**
  * 批量修改 Fabric 对象时临时关闭自动渲染，避免 add/remove/reorder 连续触发重绘。
@@ -31,6 +95,15 @@ const Canvas = () => {
   const lastWidgetsRef = useRef<Record<string, Widget>>({});
   /** 当前页面根节点 id 快照，用于把结构同步和属性同步拆开 */
   const rootIdsRef = useRef<string[]>([]);
+  /** 组内子元素聚焦辅助框，不进 store、不参与导出 */
+  const childFocusRectRef = useRef<fabric.Rect | null>(null);
+  const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
+  const {
+    hidden: isFloatingMenuHidden,
+    show: showFloatingMenu,
+    hide: hideFloatingMenu,
+    reset: resetFloatingMenu,
+  } = useFloatingMenuVisibility();
 
   const activePageId = useEditorStore((s) => s.activePageId);
   const page = useEditorStore((s) => s.pages[activePageId]);
@@ -42,6 +115,10 @@ const Canvas = () => {
   const rootIds = useEditorStore((s) => s.rootIds[activePageId]);
   const widgetPatchVersion = useEditorStore((s) => s.widgetPatchVersion);
   const selectedIds = useEditorStore((s) => s.selectedIds);
+  const focusedChildId = useEditorStore((s) => s.focusedChildId);
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
   /**
    * 1. 删除不存在对象
 2. 创建新增对象
@@ -58,6 +135,8 @@ const Canvas = () => {
       height: currentPage.height,
       backgroundColor: currentPage.background,
       preserveObjectStacking: true,
+      fireRightClick: true,
+      stopContextMenu: true,
     });
     fabricRef.current = canvas;
 
@@ -67,9 +146,7 @@ const Canvas = () => {
     // 选中事件 → 同步 selectedIds
     const pickIds = (): string[] => {
       const objs = canvas.getActiveObjects();
-      return objs
-        .map((o) => (o as fabric.Object & { data?: { id?: string } }).data?.id)
-        .filter((id): id is string => typeof id === 'string');
+      return objs.map(getFabricId).filter((id): id is string => typeof id === 'string');
     };
     const isSameSelection = (next: string[]) => {
       const current = useEditorStore.getState().selectedIds;
@@ -77,20 +154,97 @@ const Canvas = () => {
     };
     const handleSelection = () => {
       const ids = pickIds();
+      showFloatingMenu();
       if (!isSameSelection(ids)) {
         useEditorStore.getState().setSelectedIds(ids);
       }
     };
     const handleClear = () => {
+      showFloatingMenu();
       if (!isSameSelection([])) {
         useEditorStore.getState().setSelectedIds([]);
       }
     };
+    const handleTransforming = () => {
+      hideFloatingMenu();
+      const helper = childFocusRectRef.current;
+      if (helper) {
+        canvas.remove(helper);
+        childFocusRectRef.current = null;
+      }
+    };
+    const handleMouseDown = (event: { target?: fabric.Object; subTargets?: fabric.Object[] }) => {
+      const state = useEditorStore.getState();
+      const subTarget = pickSubTargetId(event, state.widgets);
+      if (subTarget) {
+        const { selectedIds: currentSelectedIds } = state;
+        const isSameGroupSelection =
+          currentSelectedIds.length === 1 && currentSelectedIds[0] === subTarget.rootId;
+        if (!isSameGroupSelection) {
+          state.setSelectedIds([subTarget.rootId]);
+        }
+        useEditorStore.getState().setFocusedChildId(subTarget.childId);
+        showFloatingMenu();
+        return;
+      }
+
+      const targetId = getFabricId(event.target);
+      if (!targetId || state.widgets[targetId]?.type === 'group') {
+        state.setFocusedChildId(undefined);
+      }
+    };
+    const handleContextMenu = (event: FabricPointerEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      hideFloatingMenu();
+      const state = useEditorStore.getState();
+      const subTarget = pickSubTargetId(event, state.widgets);
+      const targetId = subTarget?.childId ?? getFabricId(event.target);
+      const selectedRootId = subTarget?.rootId ?? targetId;
+
+      if (selectedRootId && state.widgets[selectedRootId]) {
+        const alreadySelected = state.selectedIds.includes(selectedRootId);
+        if (!alreadySelected) {
+          state.setSelectedIds([selectedRootId]);
+        }
+        state.setFocusedChildId(subTarget?.childId);
+      } else {
+        state.setSelectedIds([]);
+        state.setFocusedChildId(undefined);
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+      }
+
+      const pointer = canvas.getScenePoint(event.e);
+      const containerRect = container.getBoundingClientRect();
+      setContextMenu({
+        left: event.e.clientX - containerRect.left + container.scrollLeft,
+        top: event.e.clientY - containerRect.top + container.scrollTop,
+        canvasPoint: { x: pointer.x, y: pointer.y },
+        targetId,
+      });
+    };
+    const handleMouseDownBefore = (event: { e: Event }) => {
+      if (event.e instanceof MouseEvent && event.e.button !== 2) {
+        closeContextMenu();
+      }
+    };
+    const handleMouseUp = (event: {
+      e: Event;
+      target?: fabric.Object;
+      subTargets?: fabric.Object[];
+    }) => {
+      if (event.e instanceof MouseEvent && event.e.button === 2) {
+        handleContextMenu(event as FabricPointerEvent);
+      }
+    };
     // 对象被 fabric 自身修改后（拖拽 / 缩放 / 旋转）回写 widget
     const handleModified = (e: { target?: fabric.Object }) => {
+      showFloatingMenu();
       const obj = e.target;
       if (!obj) return;
-      const id = (obj as fabric.Object & { data?: { id?: string } }).data?.id;
+      const id = getFabricId(obj);
       if (!id) return;
       useEditorStore.getState().updateWidget(id, {
         left: obj.left ?? 0,
@@ -103,21 +257,35 @@ const Canvas = () => {
     canvas.on('selection:created', handleSelection);
     canvas.on('selection:updated', handleSelection);
     canvas.on('selection:cleared', handleClear);
+    canvas.on('mouse:down', handleMouseDown);
+    canvas.on('mouse:down:before', handleMouseDownBefore);
+    canvas.on('mouse:up', handleMouseUp);
+    canvas.on('object:moving', handleTransforming);
+    canvas.on('object:scaling', handleTransforming);
+    canvas.on('object:rotating', handleTransforming);
     canvas.on('object:modified', handleModified);
 
     return () => {
       canvas.off('selection:created', handleSelection);
       canvas.off('selection:updated', handleSelection);
       canvas.off('selection:cleared', handleClear);
+      canvas.off('mouse:down', handleMouseDown);
+      canvas.off('mouse:down:before', handleMouseDownBefore);
+      canvas.off('mouse:up', handleMouseUp);
+      canvas.off('object:moving', handleTransforming);
+      canvas.off('object:scaling', handleTransforming);
+      canvas.off('object:rotating', handleTransforming);
       canvas.off('object:modified', handleModified);
       canvas.dispose();
+      childFocusRectRef.current = null;
       fabricRef.current = null;
+      resetFloatingMenu();
       canvasEngine.detach();
       lastWidgetsRef.current = {};
       rootIdsRef.current = [];
     };
     // 仅在切换页面（id 变化）时重建
-  }, [activePageId]);
+  }, [activePageId, closeContextMenu, hideFloatingMenu, resetFloatingMenu, showFloatingMenu]);
 
   // 同步画布尺寸（不重建 canvas）
   useEffect(() => {
@@ -161,7 +329,9 @@ const Canvas = () => {
 
     const ids = rootIds ?? [];
     const idSet = new Set(ids);
-    const currentWidgets = useEditorStore.getState().widgets;
+    const currentState = useEditorStore.getState();
+    const currentWidgets = currentState.widgets;
+    const currentChildIds = currentState.childIds;
     const prevRootIds = rootIdsRef.current;
     const orderChanged =
       prevRootIds.length !== ids.length || prevRootIds.some((id, index) => id !== ids[index]);
@@ -186,7 +356,7 @@ const Canvas = () => {
 
         let obj = canvasEngine.getObject(id);
         if (!obj) {
-          obj = widgetToFabric(w) ?? undefined;
+          obj = widgetTreeToFabric(w, currentWidgets, currentChildIds) ?? undefined;
           if (!obj) return;
           canvas.add(obj);
           canvasEngine.registerObject(id, obj);
@@ -218,12 +388,28 @@ const Canvas = () => {
 
     let changed = false;
     const state = useEditorStore.getState();
-    const { widgetPatches, widgets } = state;
+    const { childIds, widgetPatches, widgets } = state;
+    const rootIdsSet = new Set(rootIds ?? []);
+    const rootsToRebuild = new Set<string>();
+    const patchEntries = Object.entries(widgetPatches);
 
-    Object.entries(widgetPatches).forEach(([id, patch]) => {
+    if (patchEntries.length > 0) {
+      canvas.discardActiveObject();
+    }
+
+    patchEntries.forEach(([id, patch]) => {
       const w = widgets[id];
       const obj = canvasEngine.getObject(id);
-      if (!w || !obj) return;
+      if (!w) return;
+
+      const rootId = getRootWidgetId(id, widgets);
+      const rootWidget = rootId ? widgets[rootId] : undefined;
+      if (rootId && rootWidget?.type === 'group' && rootIdsSet.has(rootId)) {
+        rootsToRebuild.add(rootId);
+        return;
+      }
+
+      if (!obj) return;
 
       if (Object.keys(patch).length > 0) {
         applyWidgetPatch(obj, w, patch);
@@ -232,18 +418,36 @@ const Canvas = () => {
       lastWidgetsRef.current[id] = w;
     });
 
+    rootsToRebuild.forEach((rootId) => {
+      const previous = canvasEngine.getObject(rootId);
+      const widget = widgets[rootId];
+      if (!previous || !widget) return;
+      const index = canvas.getObjects().indexOf(previous);
+      canvas.remove(previous);
+      canvasEngine.unregisterObject(rootId);
+
+      const next = widgetTreeToFabric(widget, widgets, childIds);
+      if (!next) return;
+      canvas.add(next);
+      canvasEngine.registerObject(rootId, next);
+      canvas.moveObjectTo(next, Math.max(0, index));
+      lastWidgetsRef.current[rootId] = widget;
+      changed = true;
+    });
+
     if (changed) {
+      canvasEngine.select(selectedIds);
       canvas.requestRenderAll();
     }
     state._clearWidgetPatches(widgetPatchVersion);
-  }, [widgetPatchVersion]);
+  }, [rootIds, selectedIds, widgetPatchVersion]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const activeIds = canvas
       .getActiveObjects()
-      .map((o) => (o as fabric.Object & { data?: { id?: string } }).data?.id)
+      .map(getFabricId)
       .filter((id): id is string => typeof id === 'string');
     const isSame =
       activeIds.length === selectedIds.length &&
@@ -252,22 +456,83 @@ const Canvas = () => {
     canvasEngine.select(selectedIds);
   }, [selectedIds]);
 
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    const clearFocusRect = () => {
+      const previous = childFocusRectRef.current;
+      if (!previous || !canvas) return;
+      canvas.remove(previous);
+      childFocusRectRef.current = null;
+    };
+
+    if (!canvas || !focusedChildId || selectedIds.length !== 1) {
+      clearFocusRect();
+      canvas?.requestRenderAll();
+      return;
+    }
+
+    const state = useEditorStore.getState();
+    const widget = state.widgets[focusedChildId];
+    const rootId = widget ? getRootWidgetId(widget.id, state.widgets) : null;
+    if (!widget || rootId !== selectedIds[0]) {
+      clearFocusRect();
+      canvas.requestRenderAll();
+      return;
+    }
+
+    const box = getWidgetCanvasBoundingBox(widget);
+    let helper = childFocusRectRef.current;
+    if (!helper) {
+      helper = new fabric.Rect({
+        fill: 'transparent',
+        stroke: '#1677ff',
+        strokeWidth: 1,
+        strokeDashArray: [4, 2],
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+        objectCaching: false,
+      });
+      helper.set({ data: { helper: CHILD_FOCUS_HELPER } });
+      childFocusRectRef.current = helper;
+      canvas.add(helper);
+    }
+
+    helper.set({
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+      angle: 0,
+      scaleX: 1,
+      scaleY: 1,
+    });
+    helper.setCoords();
+    canvas.bringObjectToFront(helper);
+    canvas.requestRenderAll();
+  }, [focusedChildId, selectedIds, widgetPatchVersion]);
+
+  const viewportStyle = {
+    '--page-width': `${pageWidth}px`,
+    '--page-height': `${pageHeight}px`,
+    '--zoom': zoom,
+  } as CSSProperties;
+
   return (
     <div className={styles.container} ref={containerRef}>
       {pageWidth && pageHeight ? (
-        <div
-          className={styles.viewport}
-          style={{
-            '--page-width': `${pageWidth}px`,
-            '--page-height': `${pageHeight}px`,
-            '--zoom': zoom,
-          }}
-        >
+        <div className={styles.viewport} style={viewportStyle}>
           <div className={styles.stage}>
             <canvas ref={canvasElRef} />
           </div>
         </div>
       ) : null}
+      <CanvasFloatingMenu
+        containerRef={containerRef}
+        getCanvas={() => fabricRef.current}
+        hidden={isFloatingMenuHidden || !!contextMenu}
+      />
+      <CanvasContextMenu state={contextMenu} onClose={closeContextMenu} />
     </div>
   );
 };

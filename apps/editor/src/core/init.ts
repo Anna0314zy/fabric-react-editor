@@ -1,4 +1,6 @@
 import { registerBuiltinCommands } from '@/core/command';
+import { registerBuiltinContextMenus } from '@/core/contextMenu';
+import { registerBuiltinFloatingMenus } from '@/core/floatingMenu';
 import { registerBuiltinShortcuts } from '@/core/shortcut';
 
 let initialized = false;
@@ -13,6 +15,8 @@ let initialized = false;
 export function initEditor(): void {
   if (initialized) return;
   registerBuiltinCommands();
+  registerBuiltinContextMenus();
+  registerBuiltinFloatingMenus();
   registerBuiltinShortcuts();
   initialized = true;
 }

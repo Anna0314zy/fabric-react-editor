@@ -168,7 +168,9 @@ export function registerBuiltinCommands(): void {
       const ids = getGroupableRootIds();
       if (ids.length < 2) return;
 
-      const boxes = ids.map((id) => canvasEngine.getBoundingBox(id)).filter(Boolean);
+      const boxes = ids
+        .map((id) => canvasEngine.getBoundingBox(id))
+        .filter((box): box is NonNullable<typeof box> => !!box);
       if (boxes.length !== ids.length) return;
 
       const left = Math.min(...boxes.map((box) => box.left));

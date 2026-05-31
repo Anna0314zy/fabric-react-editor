@@ -1,0 +1,90 @@
+.menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 184px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(5, 5, 5, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  color: #1f1f1f;
+  font-size: 13px;
+  line-height: 1;
+  outline: none;
+  backdrop-filter: blur(8px);
+}
+
+.itemWrap {
+  position: relative;
+}
+
+.divider {
+  height: 1px;
+  margin: 5px 4px;
+  background: rgba(5, 5, 5, 0.08);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.item:not(:disabled):hover,
+.item:not(:disabled):focus-visible {
+  background: #f0f5ff;
+}
+
+.item:disabled {
+  color: rgba(0, 0, 0, 0.28);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+.submenu {
+  position: absolute;
+  top: -6px;
+  left: calc(100% + 4px);
+  display: none;
+  min-width: 168px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(5, 5, 5, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.itemWrap:hover > .submenu,
+.itemWrap:focus-within > .submenu {
+  display: block;
+}

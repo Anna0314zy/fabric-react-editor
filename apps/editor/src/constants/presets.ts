@@ -135,57 +135,6 @@ const stressWidgets: Widget[] = Array.from({ length: STRESS_WIDGET_COUNT }, (_, 
   };
 });
 
-/** 页面 2：编组演示（group 虚拟节点 + 2 个子节点） */
-const page2Widgets: Widget[] = [
-  {
-    id: 'g-1',
-    type: 'group',
-    name: '按钮组',
-    pageId: 'p-2',
-    parentId: null,
-    left: 200,
-    top: 200,
-    width: 240,
-    height: 80,
-    angle: 0,
-    scaleX: 1,
-    scaleY: 1,
-    childrenIds: ['w-btn-bg', 'w-btn-text'],
-  },
-  {
-    id: 'w-btn-bg',
-    type: 'rect',
-    name: '按钮底',
-    pageId: 'p-2',
-    parentId: 'g-1',
-    left: 200,
-    top: 200,
-    width: 240,
-    height: 80,
-    angle: 0,
-    scaleX: 1,
-    scaleY: 1,
-    fill: '#1677ff',
-  },
-  {
-    id: 'w-btn-text',
-    type: 'text',
-    name: '按钮文字',
-    pageId: 'p-2',
-    parentId: 'g-1',
-    left: 260,
-    top: 222,
-    width: 120,
-    height: 36,
-    angle: 0,
-    scaleX: 1,
-    scaleY: 1,
-    text: 'Click Me',
-    fill: '#fff',
-    fontSize: 24,
-  },
-];
-
 /** 数组 -> Record<id, Widget> */
 const toRecord = (list: Widget[]): Record<string, Widget> =>
   list.reduce<Record<string, Widget>>((acc, w) => {
@@ -202,20 +151,17 @@ export const PRESET_PAGES: Record<string, PageData> = {
 /** 预设所有 widget 的扁平池 */
 export const PRESET_WIDGETS: Record<string, Widget> = toRecord([
   ...page1Widgets,
-  ...stressWidgets,
-  ...page2Widgets,
+  // ...stressWidgets,
 ]);
 
 /** 预设 pageId -> 根层级 widget id 列表 */
 export const PRESET_ROOT_IDS: Record<string, string[]> = {
-  'p-1': [...page1Widgets.map((w) => w.id), ...stressWidgets.map((w) => w.id)],
+  'p-1': [...page1Widgets.map((w) => w.id)],
   'p-2': ['g-1'],
 };
 
 /** 预设 groupId -> 子 widget id 列表 */
-export const PRESET_CHILD_IDS: Record<string, string[]> = {
-  'g-1': ['w-btn-bg', 'w-btn-text'],
-};
+export const PRESET_CHILD_IDS: Record<string, string[]> = {};
 
 /** 预设激活页面 id */
 export const PRESET_ACTIVE_PAGE_ID = 'p-1';

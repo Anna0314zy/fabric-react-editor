@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import {
   PRESET_ACTIVE_PAGE_ID,
   PRESET_CHILD_IDS,
@@ -59,7 +59,7 @@ function getChangedWidgetPatches(
 }
 
 /** 编辑器全局状态 */
-interface EditorState {
+export interface EditorState {
   // ========================
   // document
   // ========================
@@ -142,7 +142,7 @@ interface EditorState {
   setPageAspect: (aspect: CanvasAspect) => void;
 }
 
-export const useEditorStore = create<EditorState>((set) => ({
+export const useEditorStore: UseBoundStore<StoreApi<EditorState>> = create<EditorState>((set) => ({
   // document
   pages: PRESET_PAGES,
   widgets: PRESET_WIDGETS,
@@ -449,11 +449,13 @@ export const useEditorStore = create<EditorState>((set) => ({
     set({ activePageId: pageId, selectedIds: [], focusedChildId: undefined }),
   setSelectedIds: (ids) =>
     set((state) => {
+      const selectedId = ids[0];
       const focusedWidget = state.focusedChildId ? state.widgets[state.focusedChildId] : undefined;
       const shouldKeepFocusedChild =
         ids.length === 1 &&
-        focusedWidget?.parentId === ids[0] &&
-        state.widgets[ids[0]]?.type === 'group';
+        selectedId !== undefined &&
+        focusedWidget?.parentId === selectedId &&
+        state.widgets[selectedId]?.type === 'group';
       return {
         selectedIds: ids,
         focusedChildId: shouldKeepFocusedChild ? state.focusedChildId : undefined,
