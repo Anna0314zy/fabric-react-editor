@@ -1,6 +1,8 @@
+@use '@/styles/variables' as *;
+
 .menu {
-  position: absolute;
-  z-index: 40;
+  position: fixed;
+  z-index: $z-popover;
   min-width: 184px;
   padding: 6px;
   background: rgba(255, 255, 255, 0.98);

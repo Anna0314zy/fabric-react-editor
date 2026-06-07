@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { RightOutlined } from '@ant-design/icons';
 import { commandManager } from '@/core/command';
 import {
@@ -7,26 +8,16 @@ import {
   type ContextMenuItem,
 } from '@/core/contextMenu';
 import { useEditorStore } from '@/store';
+import { contextMenu, useContextMenuStore } from '@/store/contextMenu';
 import type { Widget } from '@/types/widget';
 import styles from './style.module.scss';
-
-export interface CanvasContextMenuState {
-  left: number;
-  top: number;
-  canvasPoint: { x: number; y: number };
-  targetId?: string;
-}
-
-interface CanvasContextMenuProps {
-  state: CanvasContextMenuState | null;
-  onClose: () => void;
-}
 
 interface ContextMenuListProps {
   ctx: ContextMenuContext;
   items: ContextMenuItem[];
-  onClose: () => void;
 }
+
+const VIEWPORT_GAP = 8;
 
 function getLabel(item: ContextMenuItem, ctx: ContextMenuContext): string {
   return typeof item.label === 'function' ? item.label(ctx) : item.label;
@@ -38,7 +29,7 @@ function isDisabled(item: ContextMenuItem, ctx: ContextMenuContext): boolean {
   );
 }
 
-function ContextMenuList({ ctx, items, onClose }: ContextMenuListProps) {
+function ContextMenuList({ ctx, items }: ContextMenuListProps) {
   return (
     <>
       {items.map((item, index) => {
@@ -54,7 +45,7 @@ function ContextMenuList({ ctx, items, onClose }: ContextMenuListProps) {
           } else {
             item.onClick?.(ctx);
           }
-          onClose();
+          contextMenu.close();
         };
 
         return (
@@ -70,7 +61,7 @@ function ContextMenuList({ ctx, items, onClose }: ContextMenuListProps) {
             </button>
             {hasChildren ? (
               <div className={styles.submenu}>
-                <ContextMenuList ctx={ctx} items={item.children!} onClose={onClose} />
+                <ContextMenuList ctx={ctx} items={item.children!} />
               </div>
             ) : null}
           </div>
@@ -80,28 +71,32 @@ function ContextMenuList({ ctx, items, onClose }: ContextMenuListProps) {
   );
 }
 
-export const CanvasContextMenu = ({ state, onClose }: CanvasContextMenuProps) => {
+function ContextMenuHost() {
+  const open = useContextMenuStore((state) => state.open);
+  const menuContext = useContextMenuStore((state) => state.context);
+  const activePageId = useEditorStore((state) => state.activePageId);
+  const page = useEditorStore((state) => state.pages[activePageId]);
+  const selectedIds = useEditorStore((state) => state.selectedIds);
+  const focusedChildId = useEditorStore((state) => state.focusedChildId);
+  const widgetsState = useEditorStore((state) => state.widgets);
   const menuRef = useRef<HTMLDivElement>(null);
-  const activePageId = useEditorStore((s) => s.activePageId);
-  const page = useEditorStore((s) => s.pages[activePageId]);
-  const selectedIds = useEditorStore((s) => s.selectedIds);
-  const focusedChildId = useEditorStore((s) => s.focusedChildId);
-  const widgetsState = useEditorStore((s) => s.widgets);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
 
   const ctx = useMemo<ContextMenuContext | null>(() => {
-    if (!state || !page) return null;
+    if (!open || !menuContext || !page) return null;
+
     const widgets = selectedIds
       .map((id) => widgetsState[id])
       .filter((widget): widget is Widget => !!widget);
     const primaryWidget = widgets[0];
     const targetWidget =
-      (state.targetId ? widgetsState[state.targetId] : undefined) ??
+      (menuContext.targetId ? widgetsState[menuContext.targetId] : undefined) ??
       (focusedChildId ? widgetsState[focusedChildId] : undefined) ??
       primaryWidget;
 
     return {
       page,
-      canvasPoint: state.canvasPoint,
+      canvasPoint: menuContext.canvasPoint,
       selectedIds,
       widgets,
       primaryWidget,
@@ -110,46 +105,70 @@ export const CanvasContextMenu = ({ state, onClose }: CanvasContextMenuProps) =>
         selectedIds.length === 0 ? 'empty' : selectedIds.length === 1 ? 'single' : 'multi',
       widgetType: targetWidget?.type ?? primaryWidget?.type,
     };
-  }, [focusedChildId, page, selectedIds, state, widgetsState]);
+  }, [focusedChildId, menuContext, open, page, selectedIds, widgetsState]);
 
   const items = useMemo(() => (ctx ? contextMenuRegistry.resolve(ctx) : []), [ctx]);
 
-  const handleKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    },
-    [onClose],
-  );
+  useLayoutEffect(() => {
+    if (!open || !menuContext) return;
+
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    const { width, height } = menu.getBoundingClientRect();
+    setPosition({
+      x: Math.max(VIEWPORT_GAP, Math.min(menuContext.x, window.innerWidth - width - VIEWPORT_GAP)),
+      y: Math.max(
+        VIEWPORT_GAP,
+        Math.min(menuContext.y, window.innerHeight - height - VIEWPORT_GAP),
+      ),
+    });
+  }, [items, menuContext, open]);
 
   useEffect(() => {
-    if (!state) return;
+    if (!open) return;
+
     const handlePointerDown = (event: PointerEvent) => {
-      if (menuRef.current?.contains(event.target as Node)) return;
-      onClose();
+      if (!menuRef.current?.contains(event.target as Node)) {
+        contextMenu.close();
+      }
     };
-    window.addEventListener('pointerdown', handlePointerDown);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('resize', onClose);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') contextMenu.close();
+    };
+    const handleViewportChange = () => contextMenu.close();
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleViewportChange);
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+
     return () => {
-      window.removeEventListener('pointerdown', handlePointerDown);
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('resize', onClose);
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('blur', handleViewportChange);
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
     };
-  }, [handleKeyDown, onClose, state]);
+  }, [open]);
 
-  if (!state || !ctx || items.length === 0) return null;
+  if (!open || !menuContext || !ctx || items.length === 0) return null;
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className={styles.menu}
-      style={{ left: state.left, top: state.top }}
+      style={{ left: position.x, top: position.y }}
       role="menu"
       tabIndex={-1}
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <ContextMenuList ctx={ctx} items={items} onClose={onClose} />
-    </div>
+      <ContextMenuList ctx={ctx} items={items} />
+    </div>,
+    document.body,
   );
-};
+}
+
+export default ContextMenuHost;

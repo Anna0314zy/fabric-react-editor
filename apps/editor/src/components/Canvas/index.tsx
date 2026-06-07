@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import * as fabric from 'fabric';
 import { useEditorStore } from '@/store';
+import { contextMenu, useContextMenuStore } from '@/store/contextMenu';
 import { applyWidgetPatch } from '@/core/canvas/widgetToFabric';
 import { widgetTreeToFabric } from '@/core/canvas/widgetTreeToFabric';
 import { canvasEngine } from '@/core/engine';
 import { getRootWidgetId } from '@/core/widget/tree';
-import { CanvasContextMenu, type CanvasContextMenuState } from '@/components/CanvasContextMenu';
 import { CanvasFloatingMenu } from '@/components/CanvasFloatingMenu';
 import { useFloatingMenuVisibility } from '@/components/CanvasFloatingMenu/useFloatingMenuVisibility';
 import type { Widget } from '@/types/widget';
@@ -97,7 +97,7 @@ const Canvas = () => {
   const rootIdsRef = useRef<string[]>([]);
   /** 组内子元素聚焦辅助框，不进 store、不参与导出 */
   const childFocusRectRef = useRef<fabric.Rect | null>(null);
-  const [contextMenu, setContextMenu] = useState<CanvasContextMenuState | null>(null);
+  const isContextMenuOpen = useContextMenuStore((state) => state.open);
   const {
     hidden: isFloatingMenuHidden,
     show: showFloatingMenu,
@@ -116,9 +116,6 @@ const Canvas = () => {
   const widgetPatchVersion = useEditorStore((s) => s.widgetPatchVersion);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const focusedChildId = useEditorStore((s) => s.focusedChildId);
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(null);
-  }, []);
   /**
    * 1. 删除不存在对象
 2. 创建新增对象
@@ -194,9 +191,6 @@ const Canvas = () => {
       }
     };
     const handleContextMenu = (event: FabricPointerEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-
       hideFloatingMenu();
       const state = useEditorStore.getState();
       const subTarget = pickSubTargetId(event, state.widgets);
@@ -217,17 +211,17 @@ const Canvas = () => {
       }
 
       const pointer = canvas.getScenePoint(event.e);
-      const containerRect = container.getBoundingClientRect();
-      setContextMenu({
-        left: event.e.clientX - containerRect.left + container.scrollLeft,
-        top: event.e.clientY - containerRect.top + container.scrollTop,
+      contextMenu.open({
+        x: event.e.clientX,
+        y: event.e.clientY,
+        source: 'canvas',
         canvasPoint: { x: pointer.x, y: pointer.y },
         targetId,
       });
     };
     const handleMouseDownBefore = (event: { e: Event }) => {
       if (event.e instanceof MouseEvent && event.e.button !== 2) {
-        closeContextMenu();
+        contextMenu.close();
       }
     };
     const handleMouseUp = (event: {
@@ -279,13 +273,14 @@ const Canvas = () => {
       canvas.dispose();
       childFocusRectRef.current = null;
       fabricRef.current = null;
+      contextMenu.close();
       resetFloatingMenu();
       canvasEngine.detach();
       lastWidgetsRef.current = {};
       rootIdsRef.current = [];
     };
     // 仅在切换页面（id 变化）时重建
-  }, [activePageId, closeContextMenu, hideFloatingMenu, resetFloatingMenu, showFloatingMenu]);
+  }, [activePageId, hideFloatingMenu, resetFloatingMenu, showFloatingMenu]);
 
   // 同步画布尺寸（不重建 canvas）
   useEffect(() => {
@@ -530,9 +525,8 @@ const Canvas = () => {
       <CanvasFloatingMenu
         containerRef={containerRef}
         getCanvas={() => fabricRef.current}
-        hidden={isFloatingMenuHidden || !!contextMenu}
+        hidden={isFloatingMenuHidden || isContextMenuOpen}
       />
-      <CanvasContextMenu state={contextMenu} onClose={closeContextMenu} />
     </div>
   );
 };
