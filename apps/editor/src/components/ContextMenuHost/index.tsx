@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import { RightOutlined } from '@ant-design/icons';
 import { commandManager } from '@/core/command';
 import {
-  contextMenuRegistry,
+  contextMenuResolver,
   type ContextMenuContext,
-  type ContextMenuItem,
+  type ContextMenuViewModel,
 } from '@/core/contextMenu';
 import { useEditorStore } from '@/store';
 import { contextMenu, useContextMenuStore } from '@/store/contextMenu';
@@ -13,37 +13,22 @@ import type { Widget } from '@/types/widget';
 import styles from './style.module.scss';
 
 interface ContextMenuListProps {
-  ctx: ContextMenuContext;
-  items: ContextMenuItem[];
+  items: ContextMenuViewModel[];
 }
 
 const VIEWPORT_GAP = 8;
 
-function getLabel(item: ContextMenuItem, ctx: ContextMenuContext): string {
-  return typeof item.label === 'function' ? item.label(ctx) : item.label;
-}
-
-function isDisabled(item: ContextMenuItem, ctx: ContextMenuContext): boolean {
-  return (
-    item.disabled?.(ctx) ?? (item.commandId ? !commandManager.canExecute(item.commandId) : false)
-  );
-}
-
-function ContextMenuList({ ctx, items }: ContextMenuListProps) {
+function ContextMenuList({ items }: ContextMenuListProps) {
   return (
     <>
       {items.map((item, index) => {
         const prev = items[index - 1];
         const showDivider = index > 0 && prev?.group !== item.group;
-        const label = getLabel(item, ctx);
-        const disabled = isDisabled(item, ctx);
         const hasChildren = !!item.children?.length;
         const handleClick = () => {
-          if (disabled || hasChildren) return;
+          if (item.disabled || hasChildren || !item.commandId) return;
           if (item.commandId) {
-            commandManager.execute(item.commandId);
-          } else {
-            item.onClick?.(ctx);
+            commandManager.execute(item.commandId, item.commandArgs);
           }
           contextMenu.close();
         };
@@ -51,9 +36,14 @@ function ContextMenuList({ ctx, items }: ContextMenuListProps) {
         return (
           <div className={styles.itemWrap} key={item.key}>
             {showDivider ? <div className={styles.divider} /> : null}
-            <button type="button" className={styles.item} disabled={disabled} onClick={handleClick}>
+            <button
+              type="button"
+              className={styles.item}
+              disabled={item.disabled}
+              onClick={handleClick}
+            >
               <span className={styles.icon}>{item.icon}</span>
-              <span className={styles.label}>{label}</span>
+              <span className={styles.label}>{item.label}</span>
               <span className={styles.meta}>
                 {item.shortcut ? <span>{item.shortcut}</span> : null}
                 {hasChildren ? <RightOutlined /> : null}
@@ -61,7 +51,7 @@ function ContextMenuList({ ctx, items }: ContextMenuListProps) {
             </button>
             {hasChildren ? (
               <div className={styles.submenu}>
-                <ContextMenuList ctx={ctx} items={item.children!} />
+                <ContextMenuList items={item.children!} />
               </div>
             ) : null}
           </div>
@@ -107,7 +97,7 @@ function ContextMenuHost() {
     };
   }, [focusedChildId, menuContext, open, page, selectedIds, widgetsState]);
 
-  const items = useMemo(() => (ctx ? contextMenuRegistry.resolve(ctx) : []), [ctx]);
+  const items = useMemo(() => (ctx ? contextMenuResolver.resolve(ctx) : []), [ctx]);
 
   useLayoutEffect(() => {
     if (!open || !menuContext) return;
@@ -165,7 +155,7 @@ function ContextMenuHost() {
       onContextMenu={(event) => event.preventDefault()}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <ContextMenuList ctx={ctx} items={items} />
+      <ContextMenuList items={items} />
     </div>,
     document.body,
   );

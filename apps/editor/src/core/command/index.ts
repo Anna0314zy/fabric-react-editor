@@ -1,3 +1,3 @@
 export { commandManager } from './CommandManager';
 export { registerBuiltinCommands } from './builtins';
-export type { Command, CommandContext } from './types';
+export type { Command, CommandArgs, CommandContext } from './types';

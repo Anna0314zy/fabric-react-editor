@@ -1,4 +1,4 @@
-import type { Command, CommandContext } from './types';
+import type { Command, CommandArgs, CommandContext } from './types';
 import { logger } from '@/core/logger';
 
 /**
@@ -43,10 +43,10 @@ class CommandManagerImpl {
   }
 
   /** 命令是否当前可执行；未注册返回 false */
-  canExecute(id: string): boolean {
+  canExecute(id: string, args?: CommandArgs): boolean {
     const cmd = this.commands.get(id);
     if (!cmd) return false;
-    return cmd.canExecute ? cmd.canExecute(this.ctx) : true;
+    return cmd.canExecute ? cmd.canExecute(this.ctx, args) : true;
   }
 
   /**
@@ -54,14 +54,14 @@ class CommandManagerImpl {
    * - 未注册：返回 false 并 warn
    * - canExecute 为 false：返回 false（静默）
    */
-  execute(id: string): boolean {
+  execute(id: string, args?: CommandArgs): boolean {
     const cmd = this.commands.get(id);
     if (!cmd) {
       logger.warn('CommandManager', `command not found: ${id}`);
       return false;
     }
-    if (cmd.canExecute && !cmd.canExecute(this.ctx)) return false;
-    cmd.run(this.ctx);
+    if (cmd.canExecute && !cmd.canExecute(this.ctx, args)) return false;
+    cmd.run(this.ctx, args);
     return true;
   }
 }

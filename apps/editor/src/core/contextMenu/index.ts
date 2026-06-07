@@ -1,8 +1,10 @@
 export { contextMenuRegistry } from './ContextMenuRegistry';
+export { contextMenuResolver } from './ContextMenuResolver';
 export { registerBuiltinContextMenus } from './builtins';
 export type {
   ContextMenuContext,
-  ContextMenuItem,
+  ContextMenuDefinition,
   ContextMenuPoint,
   ContextMenuSelectionType,
+  ContextMenuViewModel,
 } from './types';

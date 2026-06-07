@@ -15,11 +15,9 @@ import {
   VerticalAlignMiddleOutlined,
   VerticalAlignTopOutlined,
 } from '@ant-design/icons';
-import { createWidgetByType } from '@/core/canvas/createWidget';
-import { useEditorStore } from '@/store';
 import type { Widget, WidgetType } from '@/types/widget';
 import { contextMenuRegistry } from './ContextMenuRegistry';
-import type { ContextMenuContext, ContextMenuItem } from './types';
+import type { ContextMenuDefinition } from './types';
 
 let registered = false;
 
@@ -34,47 +32,34 @@ function isFillEditableWidget(widget?: Widget): widget is Exclude<Widget, { type
   return !!widget && widget.type !== 'group';
 }
 
-function addWidgetAtPoint(type: WidgetType, ctx: ContextMenuContext): void {
-  const widget = createWidgetByType(type, ctx.page);
-  if (!widget) return;
-  useEditorStore.getState().addWidget({
-    ...widget,
-    left: Math.max(0, ctx.canvasPoint.x - widget.width / 2),
-    top: Math.max(0, ctx.canvasPoint.y - widget.height / 2),
-  } as Widget);
-  useEditorStore.getState().setSelectedIds([widget.id]);
-}
-
-function patchTargetWidget(ctx: ContextMenuContext, patch: Partial<Widget>): void {
-  if (!ctx.targetWidget) return;
-  useEditorStore.getState().updateWidget(ctx.targetWidget.id, patch);
-}
-
-const createItems: ContextMenuItem[] = [
+const createItems: ContextMenuDefinition[] = [
   {
     key: 'canvas.addRect',
     label: '添加矩形',
     group: 'create',
     icon: <PlusCircleOutlined />,
-    onClick: (ctx) => addWidgetAtPoint('rect', ctx),
+    commandId: 'canvas.addWidget',
+    commandArgs: (ctx) => ({ type: 'rect', page: ctx.page, canvasPoint: ctx.canvasPoint }),
   },
   {
     key: 'canvas.addCircle',
     label: '添加圆形',
     group: 'create',
     icon: <PlusCircleOutlined />,
-    onClick: (ctx) => addWidgetAtPoint('circle', ctx),
+    commandId: 'canvas.addWidget',
+    commandArgs: (ctx) => ({ type: 'circle', page: ctx.page, canvasPoint: ctx.canvasPoint }),
   },
   {
     key: 'canvas.addText',
     label: '添加文本',
     group: 'create',
     icon: <FontSizeOutlined />,
-    onClick: (ctx) => addWidgetAtPoint('text', ctx),
+    commandId: 'canvas.addWidget',
+    commandArgs: (ctx) => ({ type: 'text', page: ctx.page, canvasPoint: ctx.canvasPoint }),
   },
 ];
 
-const alignItems: ContextMenuItem[] = [
+const alignItems: ContextMenuDefinition[] = [
   {
     key: 'widget.alignLeft',
     label: '左对齐',
@@ -119,14 +104,14 @@ const alignItems: ContextMenuItem[] = [
   },
 ];
 
-const builtinItems: ContextMenuItem[] = [
+const builtinItems: ContextMenuDefinition[] = [
   {
     key: 'canvas.create',
     label: '添加组件',
     group: 'canvas',
     icon: <PlusCircleOutlined />,
     children: createItems,
-    visible: (ctx) => ctx.selectionType === 'empty',
+    when: (ctx) => ctx.selectionType === 'empty',
   },
   {
     key: 'widget.delete',
@@ -135,7 +120,7 @@ const builtinItems: ContextMenuItem[] = [
     icon: <DeleteOutlined />,
     shortcut: 'Backspace',
     commandId: 'widget.deleteSelected',
-    visible: (ctx) => ctx.selectionType !== 'empty',
+    when: (ctx) => ctx.selectionType !== 'empty',
   },
   {
     key: 'widget.lock',
@@ -143,7 +128,7 @@ const builtinItems: ContextMenuItem[] = [
     group: 'common',
     commandId: 'widget.toggleLocked',
     icon: <LockOutlined />,
-    visible: (ctx) => ctx.selectionType !== 'empty',
+    when: (ctx) => ctx.selectionType !== 'empty',
   },
   {
     key: 'widget.visible',
@@ -151,7 +136,7 @@ const builtinItems: ContextMenuItem[] = [
     group: 'common',
     commandId: 'widget.toggleVisible',
     icon: <UnlockOutlined />,
-    visible: (ctx) => ctx.selectionType !== 'empty',
+    when: (ctx) => ctx.selectionType !== 'empty',
   },
   {
     key: 'widget.layer',
@@ -163,7 +148,7 @@ const builtinItems: ContextMenuItem[] = [
       { key: 'layer.moveDown', label: '下移一层', commandId: 'layer.moveDown' },
       { key: 'layer.sendToBack', label: '置底', commandId: 'layer.sendToBack' },
     ],
-    visible: (ctx) => ctx.selectionType === 'single' && ctx.primaryWidget?.parentId === null,
+    when: (ctx) => ctx.selectionType === 'single' && ctx.primaryWidget?.parentId === null,
   },
   {
     key: 'widget.group',
@@ -171,7 +156,7 @@ const builtinItems: ContextMenuItem[] = [
     group: 'group',
     icon: <AppstoreOutlined />,
     commandId: 'widget.groupSelected',
-    visible: (ctx) => ctx.selectionType === 'multi',
+    when: (ctx) => ctx.selectionType === 'multi',
   },
   {
     key: 'widget.ungroup',
@@ -179,14 +164,14 @@ const builtinItems: ContextMenuItem[] = [
     group: 'group',
     icon: <BorderOutlined />,
     commandId: 'widget.ungroupSelected',
-    visible: (ctx) => ctx.selectionType === 'single' && ctx.primaryWidget?.type === 'group',
+    when: (ctx) => ctx.selectionType === 'single' && ctx.primaryWidget?.type === 'group',
   },
   {
     key: 'widget.align',
     label: '对齐',
     group: 'align',
     children: alignItems,
-    visible: (ctx) => ctx.selectionType === 'multi',
+    when: (ctx) => ctx.selectionType === 'multi',
   },
   {
     key: 'text.format',
@@ -198,37 +183,24 @@ const builtinItems: ContextMenuItem[] = [
         key: 'text.toggleBold',
         label: '加粗',
         icon: <BoldOutlined />,
-        onClick: (ctx) => {
-          const widget = ctx.targetWidget;
-          if (!isTextWidget(widget)) return;
-          patchTargetWidget(ctx, {
-            fontWeight: widget.fontWeight === 'bold' ? 'normal' : 'bold',
-          } as Partial<Widget>);
-        },
+        commandId: 'text.toggleBold',
+        commandArgs: (ctx) => ({ targetId: ctx.targetWidget?.id }),
       },
       {
         key: 'text.toggleItalic',
         label: '斜体',
         icon: <ItalicOutlined />,
-        onClick: (ctx) => {
-          const widget = ctx.targetWidget;
-          if (!isTextWidget(widget)) return;
-          patchTargetWidget(ctx, {
-            fontStyle: widget.fontStyle === 'italic' ? 'normal' : 'italic',
-          } as Partial<Widget>);
-        },
+        commandId: 'text.toggleItalic',
+        commandArgs: (ctx) => ({ targetId: ctx.targetWidget?.id }),
       },
       {
         key: 'text.toggleUnderline',
         label: '下划线',
-        onClick: (ctx) => {
-          const widget = ctx.targetWidget;
-          if (!isTextWidget(widget)) return;
-          patchTargetWidget(ctx, { underline: !widget.underline } as Partial<Widget>);
-        },
+        commandId: 'text.toggleUnderline',
+        commandArgs: (ctx) => ({ targetId: ctx.targetWidget?.id }),
       },
     ],
-    visible: (ctx) => isTextWidget(ctx.targetWidget),
+    when: (ctx) => isTextWidget(ctx.targetWidget),
   },
   {
     key: 'widget.fill',
@@ -237,9 +209,10 @@ const builtinItems: ContextMenuItem[] = [
     children: FILL_COLORS.map((color) => ({
       key: `widget.fill.${color}`,
       label: color,
-      onClick: (ctx) => patchTargetWidget(ctx, { fill: color } as Partial<Widget>),
+      commandId: 'widget.setFill',
+      commandArgs: (ctx) => ({ targetId: ctx.targetWidget?.id, fill: color }),
     })),
-    visible: (ctx) => {
+    when: (ctx) => {
       const widget = ctx.targetWidget;
       return isFillEditableWidget(widget) && (isTextWidget(widget) || SHAPE_TYPES.has(widget.type));
     },

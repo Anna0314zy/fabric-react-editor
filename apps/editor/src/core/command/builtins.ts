@@ -1,8 +1,51 @@
+import { createWidgetByType } from '@/core/canvas/createWidget';
 import { history } from '@/core/history';
 import { canvasEngine, type AlignType } from '@/core/engine';
 import { useEditorStore } from '@/store';
-import type { Widget } from '@/types/widget';
+import type { PageData } from '@/types/page';
+import type { Widget, WidgetType } from '@/types/widget';
+import type { CommandArgs } from './types';
 import { commandManager } from './CommandManager';
+
+interface AddWidgetArgs {
+  type: WidgetType;
+  page: PageData;
+  canvasPoint: { x: number; y: number };
+}
+
+interface TargetWidgetArgs {
+  targetId: string;
+}
+
+interface SetFillArgs extends TargetWidgetArgs {
+  fill: string;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isAddWidgetArgs(args: CommandArgs): args is AddWidgetArgs {
+  return (
+    isObject(args) &&
+    typeof args.type === 'string' &&
+    isObject(args.page) &&
+    isObject(args.canvasPoint) &&
+    typeof args.canvasPoint.x === 'number' &&
+    typeof args.canvasPoint.y === 'number'
+  );
+}
+
+function getTargetWidget(args?: CommandArgs): Widget | undefined {
+  if (isObject(args) && typeof args.targetId === 'string') {
+    return useEditorStore.getState().widgets[args.targetId];
+  }
+  return getSelectedWidgets()[0];
+}
+
+function isSetFillArgs(args: CommandArgs): args is SetFillArgs {
+  return isObject(args) && typeof args.targetId === 'string' && typeof args.fill === 'string';
+}
 
 function getSelection(): { selectedIds: string[]; widgets: Record<string, Widget> } {
   const state = useEditorStore.getState();
@@ -113,6 +156,23 @@ function canUngroupSelection(): boolean {
  * - 后续新增功能（删除 widget、复制粘贴、对齐、缩放等）一律在此扩展
  */
 export function registerBuiltinCommands(): void {
+  commandManager.register({
+    id: 'canvas.addWidget',
+    title: '添加组件',
+    canExecute: (_ctx, args) => isAddWidgetArgs(args),
+    run: (_ctx, args) => {
+      if (!isAddWidgetArgs(args)) return;
+      const widget = createWidgetByType(args.type, args.page);
+      if (!widget) return;
+      useEditorStore.getState().addWidget({
+        ...widget,
+        left: Math.max(0, args.canvasPoint.x - widget.width / 2),
+        top: Math.max(0, args.canvasPoint.y - widget.height / 2),
+      } as Widget);
+      useEditorStore.getState().setSelectedIds([widget.id]);
+    },
+  });
+
   commandManager.register({
     id: 'editor.undo',
     title: '撤销',
@@ -299,9 +359,9 @@ export function registerBuiltinCommands(): void {
   commandManager.register({
     id: 'text.toggleBold',
     title: '加粗',
-    canExecute: () => isTextWidget(getSelectedWidgets()[0]),
-    run: () => {
-      const widget = getSelectedWidgets()[0];
+    canExecute: (_ctx, args) => isTextWidget(getTargetWidget(args)),
+    run: (_ctx, args) => {
+      const widget = getTargetWidget(args);
       if (!isTextWidget(widget)) return;
       useEditorStore
         .getState()
@@ -312,9 +372,9 @@ export function registerBuiltinCommands(): void {
   commandManager.register({
     id: 'text.toggleItalic',
     title: '斜体',
-    canExecute: () => isTextWidget(getSelectedWidgets()[0]),
-    run: () => {
-      const widget = getSelectedWidgets()[0];
+    canExecute: (_ctx, args) => isTextWidget(getTargetWidget(args)),
+    run: (_ctx, args) => {
+      const widget = getTargetWidget(args);
       if (!isTextWidget(widget)) return;
       useEditorStore.getState().updateWidget(widget.id, {
         fontStyle: widget.fontStyle === 'italic' ? 'normal' : 'italic',
@@ -325,11 +385,27 @@ export function registerBuiltinCommands(): void {
   commandManager.register({
     id: 'text.toggleUnderline',
     title: '下划线',
-    canExecute: () => isTextWidget(getSelectedWidgets()[0]),
-    run: () => {
-      const widget = getSelectedWidgets()[0];
+    canExecute: (_ctx, args) => isTextWidget(getTargetWidget(args)),
+    run: (_ctx, args) => {
+      const widget = getTargetWidget(args);
       if (!isTextWidget(widget)) return;
       useEditorStore.getState().updateWidget(widget.id, { underline: !widget.underline });
+    },
+  });
+
+  commandManager.register({
+    id: 'widget.setFill',
+    title: '设置填充颜色',
+    canExecute: (_ctx, args) => {
+      if (!isSetFillArgs(args)) return false;
+      const widget = getTargetWidget(args);
+      return !!widget && widget.type !== 'group';
+    },
+    run: (_ctx, args) => {
+      if (!isSetFillArgs(args)) return;
+      const widget = getTargetWidget(args);
+      if (!widget || widget.type === 'group') return;
+      useEditorStore.getState().updateWidget(widget.id, { fill: args.fill });
     },
   });
 }

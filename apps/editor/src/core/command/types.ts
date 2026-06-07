@@ -8,6 +8,9 @@ export interface CommandContext {
   readonly _placeholder?: never;
 }
 
+/** 单次命令调用携带的参数，由具体命令自行收窄类型。 */
+export type CommandArgs = unknown;
+
 /** 命令对象：快捷键 / 菜单 / 按钮 / 右键菜单的共享调用单元 */
 export interface Command {
   /** 全局唯一 id，建议用 'editor.xxx' / 'widget.xxx' 命名空间 */
@@ -15,7 +18,7 @@ export interface Command {
   /** 用于 UI 展示（菜单项、tooltip） */
   title?: string;
   /** 是否可执行；不可执行时快捷键不触发，UI 可置灰。默认 true */
-  canExecute?: (ctx: CommandContext) => boolean;
+  canExecute?: (ctx: CommandContext, args?: CommandArgs) => boolean;
   /** 命令执行体，内部允许调用 Editor API（store / history / canvas） */
-  run: (ctx: CommandContext) => void;
+  run: (ctx: CommandContext, args?: CommandArgs) => void;
 }
