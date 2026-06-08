@@ -52,6 +52,21 @@ pnpm --filter <pkg-name> build
 pnpm --filter <pkg-name> dev
 ```
 
+## GitHub 自动发布
+
+仓库已内置 GitHub Actions：
+
+- `.github/workflows/ci.yml`：在 PR 以及推送到 `main` / `master` 时执行格式校验、lint、类型检查和构建。
+- `.github/workflows/deploy-pages.yml`：在推送到 `main` / `master` 或手动触发时，构建 `@fabric-react-editor/editor` 并发布 `apps/editor/dist` 到 GitHub Pages。
+
+首次使用前，在 GitHub 仓库页面进入 `Settings -> Pages`，将 `Build and deployment` 的 `Source` 设置为 `GitHub Actions`。发布后的访问地址通常是：
+
+```text
+https://<owner>.github.io/<repo>/
+```
+
+部署 workflow 会自动把 Vite 的 `base` 设置为 `/<repo>/`，本地开发仍保持 `/`。
+
 ## 新增子包
 
 1. 在 `apps/` 或 `packages/` 下新建目录，例如 `packages/core`。

@@ -2,6 +2,7 @@ import { registerBuiltinCommands } from '@/core/command';
 import { registerBuiltinContextMenus } from '@/core/contextMenu';
 import { registerBuiltinFloatingMenus } from '@/core/floatingMenu';
 import { registerBuiltinShortcuts } from '@/core/shortcut';
+import { configureHistorySnapshots } from '@/core/history/setup';
 
 let initialized = false;
 
@@ -17,6 +18,7 @@ export function initEditor(): void {
   registerBuiltinCommands();
   registerBuiltinContextMenus();
   registerBuiltinFloatingMenus();
+  configureHistorySnapshots();
   registerBuiltinShortcuts();
   initialized = true;
 }

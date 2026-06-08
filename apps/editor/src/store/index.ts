@@ -21,6 +21,7 @@ import {
   type RemoveSnapshot,
 } from '@/core/history/commands';
 import { computeGroupLayoutPatches } from '@/core/layout/groupLayout';
+import type { EditorDocumentSnapshot } from '@/core/history/snapshot';
 
 export type CanvasAspect = '16:9' | '4:3';
 export type ZoomMode = 'fit' | 'manual';
@@ -76,6 +77,8 @@ export interface EditorState {
   /** widgetPatches 版本号；每次属性变更递增，供 Canvas 低成本订阅 */
   // widgetPatchVersion 是一个轻量变更信号，widgetPatches 是真实增量数据。Canvas 订阅 version，读取 patches，从而避免订阅大对象 widgets 造成全量扫描。
   widgetPatchVersion: number;
+  /** 完整文档恢复版本；变化时 Canvas 放弃增量 diff 并全量重建 */
+  documentRevision: number;
 
   // ========================
   // ui
@@ -115,6 +118,8 @@ export interface EditorState {
   _restoreWidgets: (snapshot: RemoveSnapshot) => void;
   /** 清理已被 Canvas 消费的属性 patch */
   _clearWidgetPatches: (version: number) => void;
+  /** 从历史关键帧完整恢复业务文档 */
+  _restoreDocumentSnapshot: (snapshot: EditorDocumentSnapshot) => void;
 
   // ========================
   // actions（对外，走 history）
@@ -150,6 +155,7 @@ export const useEditorStore: UseBoundStore<StoreApi<EditorState>> = create<Edito
   childIds: PRESET_CHILD_IDS,
   widgetPatches: {},
   widgetPatchVersion: 0,
+  documentRevision: 0,
 
   // ui
   activePageId: PRESET_ACTIVE_PAGE_ID,
@@ -415,6 +421,22 @@ export const useEditorStore: UseBoundStore<StoreApi<EditorState>> = create<Edito
       return { widgetPatches: {} };
     }),
 
+  _restoreDocumentSnapshot: (snapshot) =>
+    set((state) => ({
+      pages: structuredClone(snapshot.pages),
+      widgets: structuredClone(snapshot.widgets),
+      rootIds: structuredClone(snapshot.rootIds),
+      childIds: structuredClone(snapshot.childIds),
+      activePageId: snapshot.activePageId,
+      selectedIds: [],
+      focusedChildId: undefined,
+      hoveredId: undefined,
+      editingTextId: undefined,
+      widgetPatches: {},
+      widgetPatchVersion: state.widgetPatchVersion + 1,
+      documentRevision: state.documentRevision + 1,
+    })),
+
   // ========================
   // actions
   // ========================
@@ -491,6 +513,21 @@ export const useEditorStore: UseBoundStore<StoreApi<EditorState>> = create<Edito
       };
     }),
 }));
+
+export function captureEditorDocumentSnapshot(): EditorDocumentSnapshot {
+  const state = useEditorStore.getState();
+  return structuredClone({
+    pages: state.pages,
+    widgets: state.widgets,
+    rootIds: state.rootIds,
+    childIds: state.childIds,
+    activePageId: state.activePageId,
+  });
+}
+
+export function restoreEditorDocumentSnapshot(snapshot: EditorDocumentSnapshot): void {
+  useEditorStore.getState()._restoreDocumentSnapshot(snapshot);
+}
 
 declare global {
   interface Window {

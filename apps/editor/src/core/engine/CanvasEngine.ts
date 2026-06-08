@@ -17,6 +17,8 @@ export class CanvasEngine {
 
   private canvas: fabric.Canvas | null = null;
   private objectMap = new Map<string, fabric.Object>();
+  private renderBatchDepth = 0;
+  private renderPending = false;
 
   /** 私有化构造函数，禁止外部 new，强制走 getInstance */
   private constructor() {}
@@ -43,6 +45,8 @@ export class CanvasEngine {
   detach(): void {
     this.canvas = null;
     this.objectMap.clear();
+    this.renderBatchDepth = 0;
+    this.renderPending = false;
   }
 
   /** 注册 widgetId -> fabric.Object 映射 */
@@ -53,6 +57,10 @@ export class CanvasEngine {
   /** 注销映射 */
   unregisterObject(id: string): void {
     this.objectMap.delete(id);
+  }
+
+  clearObjectRegistry(): void {
+    this.objectMap.clear();
   }
 
   /** 是否已就绪 */
@@ -192,7 +200,24 @@ export class CanvasEngine {
   // ========================
 
   requestRender(): void {
+    if (this.renderBatchDepth > 0) {
+      this.renderPending = true;
+      return;
+    }
     this.canvas?.requestRenderAll();
+  }
+
+  beginRenderBatch(): void {
+    this.renderBatchDepth++;
+  }
+
+  endRenderBatch(): void {
+    if (this.renderBatchDepth === 0) return;
+    this.renderBatchDepth--;
+    if (this.renderBatchDepth === 0 && this.renderPending) {
+      this.renderPending = false;
+      this.canvas?.requestRenderAll();
+    }
   }
 }
 

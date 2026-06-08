@@ -3,6 +3,7 @@ import {
   AppstoreOutlined,
   FontSizeOutlined,
   BorderOutlined,
+  HistoryOutlined,
   OrderedListOutlined,
   PictureOutlined,
   StarOutlined,
@@ -11,6 +12,7 @@ import {
 import { useEditorStore } from '@/store';
 import { createWidgetByType } from '@/core/canvas/createWidget';
 import type { WidgetType } from '@/types/widget';
+import HistoryPanel from '@/components/HistoryPanel';
 import LayerPanel from './LayerPanel';
 import styles from './style.module.scss';
 
@@ -130,6 +132,15 @@ const LeftPanel = () => {
               </span>
             ),
             children: <LayerPanel />,
+          },
+          {
+            key: 'history',
+            label: (
+              <span>
+                <HistoryOutlined /> 历史
+              </span>
+            ),
+            children: <HistoryPanel />,
           },
         ]}
       />

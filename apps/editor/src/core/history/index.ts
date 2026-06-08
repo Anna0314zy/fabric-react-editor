@@ -44,5 +44,6 @@ export function useHistoryControls(): HistoryControlsSnapshot {
 }
 
 export { HistoryManager } from './manager';
-export type { HistorySnapshot } from './manager';
+export type { HistoryCheckpoint, HistoryEntry, HistorySnapshot } from './manager';
+export type { EditorDocumentSnapshot, HistorySnapshotAdapter } from './snapshot';
 export type { Command } from './types';

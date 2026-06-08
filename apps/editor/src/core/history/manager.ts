@@ -1,7 +1,30 @@
 import type { Command } from './types';
+import type { EditorDocumentSnapshot, HistorySnapshotAdapter } from './snapshot';
 
 /** 默认历史栈最大长度 */
 const DEFAULT_LIMIT = 200;
+const DEFAULT_CHECKPOINT_INTERVAL = 25;
+const SNAPSHOT_RESTORE_COST = 5;
+
+export interface HistoryEntry {
+  readonly id: number;
+  readonly name: string;
+  readonly createdAt: number;
+}
+
+interface InternalHistoryEntry extends HistoryEntry {
+  readonly command: Command;
+}
+
+export interface HistoryCheckpoint {
+  readonly id: number;
+  readonly index: number;
+  readonly createdAt: number;
+}
+
+interface InternalHistoryCheckpoint extends HistoryCheckpoint {
+  readonly snapshot: EditorDocumentSnapshot;
+}
 
 /**
  * 历史快照：作为 React useSyncExternalStore 的 snapshot
@@ -12,28 +35,48 @@ export interface HistorySnapshot {
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly version: number;
+  readonly entries: readonly HistoryEntry[];
+  readonly currentIndex: number;
+  readonly checkpoints: readonly HistoryCheckpoint[];
+  readonly isJumping: boolean;
 }
 
 /**
  * 历史管理器
- * - 历史相关数据全部内聚在此（undo/redo 栈、canUndo/canRedo、version）
+ * - 历史相关数据全部内聚在此（历史列表、当前指针、canUndo/canRedo、version）
  * - 通过 subscribe + getSnapshot 桥接 React（useSyncExternalStore）
- * - dispatch(cmd): execute 后入栈，并尝试与栈顶 merge；同时清空 redo 栈
- * - undo / redo: 在两个栈间挪动
+ * - dispatch(cmd): execute 后截断未来分支并入栈，同时尝试与当前命令 merge
+ * - undo / redo / goTo: 移动历史指针并执行对应的反向或正向操作
  */
 export class HistoryManager {
   /** 全局唯一实例（懒加载） */
   private static instance: HistoryManager | null = null;
 
-  private undoStack: Command[] = [];
-  private redoStack: Command[] = [];
+  private entries: InternalHistoryEntry[] = [];
+  private currentIndex = -1;
+  private nextEntryId = 1;
+  private checkpoints: InternalHistoryCheckpoint[] = [];
+  private nextCheckpointId = 1;
+  private baseSnapshot: EditorDocumentSnapshot | null = null;
+  private snapshotAdapter: HistorySnapshotAdapter | null = null;
+  private readonly checkpointInterval: number;
+  private isJumping = false;
   private limit: number;
   private listeners = new Set<() => void>();
-  private snapshot: HistorySnapshot = { canUndo: false, canRedo: false, version: 0 };
+  private snapshot: HistorySnapshot = {
+    canUndo: false,
+    canRedo: false,
+    version: 0,
+    entries: [],
+    currentIndex: -1,
+    checkpoints: [],
+    isJumping: false,
+  };
 
   /** 私有构造，禁止外部 new，确保全局唯一 */
-  private constructor(limit = DEFAULT_LIMIT) {
+  private constructor(limit = DEFAULT_LIMIT, checkpointInterval = DEFAULT_CHECKPOINT_INTERVAL) {
     this.limit = limit;
+    this.checkpointInterval = checkpointInterval;
   }
 
   /** 获取全局唯一的历史管理器实例 */
@@ -52,6 +95,15 @@ export class HistoryManager {
     return this.snapshot.canRedo;
   }
 
+  configureSnapshotAdapter(adapter: HistorySnapshotAdapter): void {
+    this.snapshotAdapter = adapter;
+    if (this.entries.length === 0) {
+      this.baseSnapshot = adapter.capture();
+      this.checkpoints = [];
+    }
+    this.emit();
+  }
+
   /** 订阅历史栈变更（绑定 this，便于直接传给 useSyncExternalStore） */
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -64,56 +116,211 @@ export class HistoryManager {
   getSnapshot = (): HistorySnapshot => this.snapshot;
 
   dispatch(cmd: Command): void {
+    if (this.isJumping) return;
     cmd.execute();
 
-    // 尝试与栈顶合并
-    const top = this.undoStack[this.undoStack.length - 1];
-    if (top && cmd.merge) {
-      const merged = cmd.merge(top);
+    // 撤销后执行新操作会产生新分支，旧的未来记录随之失效。
+    if (this.currentIndex < this.entries.length - 1) {
+      this.entries.splice(this.currentIndex + 1);
+      this.checkpoints = this.checkpoints.filter(
+        (checkpoint) => checkpoint.index <= this.currentIndex,
+      );
+    }
+
+    const currentEntry = this.entries[this.currentIndex];
+    if (currentEntry && cmd.merge) {
+      const merged = cmd.merge(currentEntry.command);
       if (merged) {
-        this.undoStack[this.undoStack.length - 1] = merged;
-        this.redoStack = [];
+        this.entries[this.currentIndex] = {
+          ...currentEntry,
+          name: merged.name,
+          command: merged,
+        };
+        this.refreshCheckpointAtCurrentIndex();
         this.emit();
         return;
       }
     }
 
-    this.undoStack.push(cmd);
-    if (this.undoStack.length > this.limit) {
-      this.undoStack.shift();
-    }
-    this.redoStack = [];
+    this.entries.push({
+      id: this.nextEntryId++,
+      name: cmd.name,
+      createdAt: Date.now(),
+      command: cmd,
+    });
+    this.currentIndex = this.entries.length - 1;
+    this.captureCheckpointIfNeeded();
+
+    this.trimHistory();
     this.emit();
   }
 
   undo = (): void => {
-    const cmd = this.undoStack.pop();
-    if (!cmd) return;
-    cmd.undo();
-    this.redoStack.push(cmd);
-    this.emit();
+    if (this.currentIndex < 0 || this.isJumping) return;
+    this.runReplay(() => {
+      this.entries[this.currentIndex].command.undo();
+      this.currentIndex--;
+    });
   };
 
   redo = (): void => {
-    const cmd = this.redoStack.pop();
-    if (!cmd) return;
-    cmd.execute();
-    this.undoStack.push(cmd);
-    this.emit();
+    if (this.currentIndex >= this.entries.length - 1 || this.isJumping) return;
+    this.runReplay(() => {
+      const nextIndex = this.currentIndex + 1;
+      this.entries[nextIndex].command.execute();
+      this.currentIndex = nextIndex;
+    });
   };
 
+  goTo(targetIndex: number): void {
+    const nextIndex = Math.max(-1, Math.min(targetIndex, this.entries.length - 1));
+    if (nextIndex === this.currentIndex || this.isJumping) return;
+
+    const checkpoint = this.findCheckpoint(nextIndex);
+    const directCost = Math.abs(this.currentIndex - nextIndex);
+    const checkpointCost = checkpoint
+      ? SNAPSHOT_RESTORE_COST + (nextIndex - checkpoint.index)
+      : Number.POSITIVE_INFINITY;
+
+    this.runReplay(() => {
+      if (checkpoint && checkpointCost < directCost) {
+        this.restoreCheckpoint(checkpoint, nextIndex);
+        return;
+      }
+      this.moveDirectly(nextIndex);
+    });
+  }
+
   clear(): void {
-    this.undoStack = [];
-    this.redoStack = [];
+    this.entries = [];
+    this.currentIndex = -1;
+    this.checkpoints = [];
+    this.baseSnapshot = this.snapshotAdapter?.capture() ?? null;
     this.emit();
+  }
+
+  private runReplay(task: () => void): void {
+    this.isJumping = true;
+    this.emit();
+    this.snapshotAdapter?.beginReplay?.();
+    try {
+      task();
+    } finally {
+      this.snapshotAdapter?.endReplay?.();
+      this.isJumping = false;
+      this.emit();
+    }
+  }
+
+  private moveDirectly(targetIndex: number): void {
+    while (this.currentIndex > targetIndex) {
+      this.entries[this.currentIndex].command.undo();
+      this.currentIndex--;
+    }
+
+    while (this.currentIndex < targetIndex) {
+      const nextIndex = this.currentIndex + 1;
+      this.entries[nextIndex].command.execute();
+      this.currentIndex = nextIndex;
+    }
+  }
+
+  private findCheckpoint(targetIndex: number): InternalHistoryCheckpoint | null {
+    if (!this.snapshotAdapter) return null;
+
+    let candidate: InternalHistoryCheckpoint | null = this.baseSnapshot
+      ? {
+          id: 0,
+          index: -1,
+          createdAt: 0,
+          snapshot: this.baseSnapshot,
+        }
+      : null;
+
+    for (const checkpoint of this.checkpoints) {
+      if (checkpoint.index > targetIndex) break;
+      candidate = checkpoint;
+    }
+    return candidate;
+  }
+
+  private restoreCheckpoint(checkpoint: InternalHistoryCheckpoint, targetIndex: number): void {
+    const adapter = this.snapshotAdapter;
+    if (!adapter) {
+      this.moveDirectly(targetIndex);
+      return;
+    }
+
+    adapter.restore(checkpoint.snapshot);
+    this.currentIndex = checkpoint.index;
+    while (this.currentIndex < targetIndex) {
+      const nextIndex = this.currentIndex + 1;
+      this.entries[nextIndex].command.execute();
+      this.currentIndex = nextIndex;
+    }
+  }
+
+  private captureCheckpointIfNeeded(): void {
+    const adapter = this.snapshotAdapter;
+    if (!adapter || this.currentIndex < 0) return;
+    if ((this.currentIndex + 1) % this.checkpointInterval !== 0) return;
+
+    this.checkpoints.push({
+      id: this.nextCheckpointId++,
+      index: this.currentIndex,
+      createdAt: Date.now(),
+      snapshot: adapter.capture(),
+    });
+  }
+
+  private refreshCheckpointAtCurrentIndex(): void {
+    const adapter = this.snapshotAdapter;
+    if (!adapter) return;
+    const checkpointIndex = this.checkpoints.findIndex(
+      (checkpoint) => checkpoint.index === this.currentIndex,
+    );
+    if (checkpointIndex < 0) return;
+    const checkpoint = this.checkpoints[checkpointIndex];
+    this.checkpoints[checkpointIndex] = {
+      ...checkpoint,
+      createdAt: Date.now(),
+      snapshot: adapter.capture(),
+    };
+  }
+
+  private trimHistory(): void {
+    if (this.entries.length <= this.limit) return;
+
+    const overflow = this.entries.length - this.limit;
+    const checkpoint = this.checkpoints.find((item) => item.index >= overflow - 1);
+    if (!checkpoint) return;
+
+    const removeCount = checkpoint.index + 1;
+    this.baseSnapshot = checkpoint.snapshot;
+    this.entries.splice(0, removeCount);
+    this.currentIndex -= removeCount;
+    this.checkpoints = this.checkpoints
+      .filter((item) => item.index > checkpoint.index)
+      .map((item) => ({
+        ...item,
+        index: item.index - removeCount,
+      }));
   }
 
   private emit(): void {
     // 重建快照引用，触发 useSyncExternalStore 比较
     this.snapshot = {
-      canUndo: this.undoStack.length > 0,
-      canRedo: this.redoStack.length > 0,
+      canUndo: this.currentIndex >= 0,
+      canRedo: this.currentIndex < this.entries.length - 1,
       version: this.snapshot.version + 1,
+      entries: this.entries.map(({ id, name, createdAt }) => ({ id, name, createdAt })),
+      currentIndex: this.currentIndex,
+      checkpoints: this.checkpoints.map(({ id, index, createdAt }) => ({
+        id,
+        index,
+        createdAt,
+      })),
+      isJumping: this.isJumping,
     };
     this.listeners.forEach((l) => l());
   }

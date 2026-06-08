@@ -95,6 +95,8 @@ const Canvas = () => {
   const lastWidgetsRef = useRef<Record<string, Widget>>({});
   /** 当前页面根节点 id 快照，用于把结构同步和属性同步拆开 */
   const rootIdsRef = useRef<string[]>([]);
+  /** 最近一次完成全量恢复的文档版本 */
+  const documentRevisionRef = useRef(0);
   /** 组内子元素聚焦辅助框，不进 store、不参与导出 */
   const childFocusRectRef = useRef<fabric.Rect | null>(null);
   const isContextMenuOpen = useContextMenuStore((state) => state.open);
@@ -114,6 +116,7 @@ const Canvas = () => {
   const zoomMode = useEditorStore((s) => s.zoomMode);
   const rootIds = useEditorStore((s) => s.rootIds[activePageId]);
   const widgetPatchVersion = useEditorStore((s) => s.widgetPatchVersion);
+  const documentRevision = useEditorStore((s) => s.documentRevision);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const focusedChildId = useEditorStore((s) => s.focusedChildId);
   /**
@@ -207,7 +210,7 @@ const Canvas = () => {
         state.setSelectedIds([]);
         state.setFocusedChildId(undefined);
         canvas.discardActiveObject();
-        canvas.requestRenderAll();
+        canvasEngine.requestRender();
       }
 
       const pointer = canvas.getScenePoint(event.e);
@@ -287,7 +290,7 @@ const Canvas = () => {
     const canvas = fabricRef.current;
     if (!canvas || !pageWidth || !pageHeight) return;
     canvas.setDimensions({ width: pageWidth, height: pageHeight });
-    canvas.requestRenderAll();
+    canvasEngine.requestRender();
   }, [pageWidth, pageHeight]);
 
   // 同步页面背景色（不重建 canvas）
@@ -295,7 +298,7 @@ const Canvas = () => {
     const canvas = fabricRef.current;
     if (!canvas || !pageBackground) return;
     canvas.backgroundColor = pageBackground;
-    canvas.requestRenderAll();
+    canvasEngine.requestRender();
   }, [pageBackground]);
 
   // fit 模式：根据中间容器尺寸自动计算显示缩放，窗口变化时同步适配。
@@ -321,6 +324,7 @@ const Canvas = () => {
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+    if (documentRevision !== documentRevisionRef.current) return;
 
     const ids = rootIds ?? [];
     const idSet = new Set(ids);
@@ -371,15 +375,16 @@ const Canvas = () => {
     });
 
     if (structuralChanged) {
-      canvas.requestRenderAll();
+      canvasEngine.requestRender();
     }
     rootIdsRef.current = ids;
-  }, [rootIds]);
+  }, [documentRevision, rootIds]);
 
   // 属性同步：只消费 store 记录的 patch，避免每次属性变化都扫描当前页所有对象。
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
+    if (documentRevision !== documentRevisionRef.current) return;
 
     let changed = false;
     const state = useEditorStore.getState();
@@ -432,10 +437,44 @@ const Canvas = () => {
 
     if (changed) {
       canvasEngine.select(selectedIds);
-      canvas.requestRenderAll();
     }
     state._clearWidgetPatches(widgetPatchVersion);
-  }, [rootIds, selectedIds, widgetPatchVersion]);
+  }, [documentRevision, rootIds, selectedIds, widgetPatchVersion]);
+
+  // 关键帧恢复会整体替换文档数据；此时跳过增量 diff，按最终 Store 状态重建一次。
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas || documentRevision === documentRevisionRef.current) return;
+
+    const state = useEditorStore.getState();
+    const ids = state.rootIds[state.activePageId] ?? [];
+    const objects = canvas.getObjects();
+
+    batchCanvasMutation(canvas, () => {
+      canvas.discardActiveObject();
+      if (objects.length > 0) {
+        canvas.remove(...objects);
+      }
+      canvasEngine.clearObjectRegistry();
+      lastWidgetsRef.current = {};
+
+      ids.forEach((id) => {
+        const widget = state.widgets[id];
+        if (!widget) return;
+        const object = widgetTreeToFabric(widget, state.widgets, state.childIds);
+        if (!object) return;
+        canvas.add(object);
+        canvasEngine.registerObject(id, object);
+        lastWidgetsRef.current[id] = widget;
+      });
+    });
+
+    childFocusRectRef.current = null;
+    rootIdsRef.current = ids;
+    documentRevisionRef.current = documentRevision;
+    canvasEngine.select(state.selectedIds);
+    canvasEngine.requestRender();
+  }, [documentRevision]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -462,7 +501,7 @@ const Canvas = () => {
 
     if (!canvas || !focusedChildId || selectedIds.length !== 1) {
       clearFocusRect();
-      canvas?.requestRenderAll();
+      canvasEngine.requestRender();
       return;
     }
 
@@ -471,7 +510,7 @@ const Canvas = () => {
     const rootId = widget ? getRootWidgetId(widget.id, state.widgets) : null;
     if (!widget || rootId !== selectedIds[0]) {
       clearFocusRect();
-      canvas.requestRenderAll();
+      canvasEngine.requestRender();
       return;
     }
 
@@ -504,7 +543,7 @@ const Canvas = () => {
     });
     helper.setCoords();
     canvas.bringObjectToFront(helper);
-    canvas.requestRenderAll();
+    canvasEngine.requestRender();
   }, [focusedChildId, selectedIds, widgetPatchVersion]);
 
   const viewportStyle = {

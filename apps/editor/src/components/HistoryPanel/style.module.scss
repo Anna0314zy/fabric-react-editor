@@ -1,0 +1,97 @@
+@use '@/styles/variables' as *;
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: $spacing-sm;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  width: 100%;
+  min-height: 44px;
+  padding: $spacing-xs $spacing-sm;
+  color: $color-text;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: $radius-sm;
+
+  &:hover {
+    background: $color-bg-base;
+  }
+
+  &:disabled {
+    cursor: wait;
+  }
+}
+
+.current {
+  background: $color-primary-bg;
+  border-color: $color-primary;
+}
+
+.future {
+  opacity: 0.45;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: $color-primary;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+}
+
+.content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+}
+
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: $spacing-xs;
+  overflow: hidden;
+  font-size: $font-size-sm;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkpoint {
+  padding: 2px 4px;
+  color: $color-primary;
+  font-size: 10px;
+  line-height: 1;
+  background: $color-primary-bg;
+  border-radius: $radius-sm;
+}
+
+.time {
+  flex-shrink: 0;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+}
+
+.status {
+  padding: $spacing-sm;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: $font-size-sm;
+  text-align: center;
+}
